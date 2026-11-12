@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rapid_nav_navigation</name>
+  <version>0.1.0</version>
+  <description>Navigation of the RAPID-NAV robot: occupancy maps, localisation, the Nav2 planner servers with our planner, and the planner checks.</description>
+  <maintainer email="harsh.v.sharma@outlook.com">Harsh Vardhan</maintainer>
+  <license>MIT</license>
+
+  <author>Rishi Atreya</author>
+  <author>Kamalesh Kumar B</author>
+  <author>Jaspinder Kaur</author>
+  <author>Harsh Vardhan</author>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_smac_planner</exec_depend>
+  <exec_depend>nav2_theta_star_planner</exec_depend>
+  <exec_depend>nav2_rviz_plugins</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <test_depend>python3-pil</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
