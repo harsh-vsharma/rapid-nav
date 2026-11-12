@@ -114,3 +114,53 @@ Zip the following into one file and send it to the owner:
 
 Also send your machine's details: the output of `nvidia-smi` if you have an NVIDIA GPU, otherwise `lscpu | head -n 20`,
 and `free -h`.
+
+## 10. Global planning (S5)
+
+This part checks the map, the localisation and the planners. It needs a native ROS 2 Jazzy install (or the Docker image
+for the offline check). Build with `colcon build --symlink-install` as in step 1, and `source install/setup.bash` in
+every terminal.
+
+**a. Start the simulation with the planning stack.** The robot starts at the origin of the arena and RViz opens with the
+planning layout (map, particle cloud, costmap, scan and one path per planner):
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py planning:=true
+```
+
+**b. Localisation in RViz.** Wait about 20 seconds. The particle cloud (the small arrows) should collapse onto the robot
+and the map's walls should line up with the laser scan. Save a screenshot as `rviz-map.png`.
+
+**c. Goals in RViz.** Use the "2D Goal Pose" tool to click three goals in open floor, one of them behind a crate. After
+each click, seven coloured lines appear, one per planner (`/planned_paths/<planner id>`), and the log in the launch
+terminal prints each planner's length and planning time. The lines should stay clear of the crates and walls. Save a
+screenshot with the paths as `rviz-paths.png`.
+
+**d. The automatic checks.** This drives the robot (the same drive as step 4), so do not send goals while it runs. In a
+second terminal:
+
+```bash
+ros2 run rapid_nav_tools planner_check --mode sim --map arena
+```
+
+It prints the checks and writes a `planner_check_arena_<time>/` folder with `summary.md`, `table_arena.md`,
+`paths_arena.png`, `results.csv` and `results.json`. The check takes several minutes. Keep the terminal output.
+
+**e. The offline maze check.** This needs no simulation. Stop the simulation (Ctrl+C), then start the planning stack
+without the robot:
+
+```bash
+ros2 launch rapid_nav_navigation planning.launch.py localization:=static use_sim_time:=false map:=maze
+```
+
+In a second terminal:
+
+```bash
+ros2 run rapid_nav_tools planner_check --mode offline --map maze
+```
+
+This writes a `planner_check_maze_<time>/` folder. Stop the launch with Ctrl+C when it has finished.
+
+**What to send back** for this part: `rviz-map.png` and `rviz-paths.png`; the two `planner_check_*` folders from steps d and
+e; the terminal output of both checks; and any error printed by the launch. The meaning of the checks, and the
+numbers they should give, are in [navigation.md](navigation.md).
