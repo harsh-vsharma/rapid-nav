@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <queue>
 
@@ -100,7 +102,33 @@ bool line_of_sight(
   return true;
 }
 
-double line_cost(const GridView & grid, int x0, int y0, int x1, int y1, const SearchParams & params)
+void axis_breaks(double from, double to, std::vector<double> & out)
+{
+  // Parameters t in (0, 1) at which a segment crosses a cell border on one axis, in
+  // increasing order.
+  const double delta = to - from;
+  if (delta == 0.0) {
+    return;
+  }
+  const double low = std::min(from, to);
+  const double high = std::max(from, to);
+  if (delta > 0.0) {
+    for (double border = std::floor(low) + 0.5; border < high; border += 1.0) {
+      if (border > low) {
+        out.push_back((border - from) / delta);
+      }
+    }
+  } else {
+    for (double border = std::ceil(high) - 0.5; border > low; border -= 1.0) {
+      if (border < high) {
+        out.push_back((border - from) / delta);
+      }
+    }
+  }
+}
+
+double line_cost(
+  const GridView & grid, int x0, int y0, int x1, int y1, const SearchParams & params)
 {
   const double dx = static_cast<double>(x1 - x0);
   const double dy = static_cast<double>(y1 - y0);
@@ -108,23 +136,19 @@ double line_cost(const GridView & grid, int x0, int y0, int x1, int y1, const Se
   if (length < kTiny) {
     return 0.0;
   }
-  // Parameters t in (0, 1) where the segment crosses a cell border (half-integer x or y).
-  std::vector<double> breaks = {0.0, 1.0};
-  const double low_x = std::min<double>(x0, x1);
-  const double high_x = std::max<double>(x0, x1);
-  for (double border = std::floor(low_x) + 0.5; border < high_x; border += 1.0) {
-    if (border > low_x && dx != 0.0) {
-      breaks.push_back((border - x0) / dx);
-    }
-  }
-  const double low_y = std::min<double>(y0, y1);
-  const double high_y = std::max<double>(y0, y1);
-  for (double border = std::floor(low_y) + 0.5; border < high_y; border += 1.0) {
-    if (border > low_y && dy != 0.0) {
-      breaks.push_back((border - y0) / dy);
-    }
-  }
-  std::sort(breaks.begin(), breaks.end());
+  std::vector<double> across_x;
+  std::vector<double> across_y;
+  across_x.reserve(static_cast<std::size_t>(std::abs(x1 - x0)));
+  across_y.reserve(static_cast<std::size_t>(std::abs(y1 - y0)));
+  axis_breaks(x0, x1, across_x);
+  axis_breaks(y0, y1, across_y);
+  std::vector<double> breaks;
+  breaks.reserve(across_x.size() + across_y.size() + 2);
+  breaks.push_back(0.0);
+  std::merge(across_x.begin(), across_x.end(), across_y.begin(), across_y.end(),
+    std::back_inserter(breaks));
+  breaks.push_back(1.0);
+
   double cost = 0.0;
   for (std::size_t i = 0; i + 1 < breaks.size(); ++i) {
     const double a = breaks[i];

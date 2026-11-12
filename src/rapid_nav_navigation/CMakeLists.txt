@@ -3,8 +3,7 @@ project(rapid_nav_navigation)
 
 find_package(ament_cmake REQUIRED)
 
-# Maps only for now; launch files, configuration and RViz arrive with the planning launch.
-install(DIRECTORY maps
+install(DIRECTORY maps config launch
   DESTINATION share/${PROJECT_NAME}
 )
 
