@@ -16,6 +16,9 @@ natively instead (see [setup.md](setup.md)).
 
 The build happens in a Docker volume, so the repository's own `build/` and `install/` are not touched.
 
+The build uses at most two compile jobs (`MAKEFLAGS=-j2`, `--parallel-workers 2`): the C++ planner includes the
+Nav2 headers, and one translation unit of that kind takes about 1 GB, while the Docker VM has about 4.8 GiB.
+
 ## Limits
 
 The image renders sensors in software. Rates are lower than on a native machine, and there is no GUI.

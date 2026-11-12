@@ -51,12 +51,14 @@ case "${1:-}" in
         ;;
     build)
         shift
-        in_container "colcon build --base-paths /repo/src --build-base /ws/build --install-base /ws/install --event-handlers console_cohesion+$(quoted ${1+"$@"})"
+        # At most two compile jobs: a C++ translation unit that includes the Nav2 headers takes about 1 GB, and the
+        # Docker VM has about 4.8 GiB, so more jobs risk running out of memory.
+        in_container "MAKEFLAGS=-j2 colcon build --base-paths /repo/src --build-base /ws/build --install-base /ws/install --parallel-workers 2 --event-handlers console_cohesion+$(quoted ${1+"$@"})"
         ;;
     test)
         # Show the test results even when some test fails, then exit with colcon test's code.
         # colcon creates no results folder when no package has tests (src/ is empty before S1).
-        in_container "colcon test --base-paths /repo/src --build-base /ws/build --install-base /ws/install --test-result-base /ws/test_results --event-handlers console_cohesion+; rc=\$?; if [ -d /ws/test_results ]; then colcon test-result --test-result-base /ws/test_results --verbose; fi; exit \$rc"
+        in_container "colcon test --base-paths /repo/src --build-base /ws/build --install-base /ws/install --test-result-base /ws/test_results --return-code-on-test-failure --event-handlers console_cohesion+; rc=\$?; if [ -d /ws/test_results ]; then colcon test-result --test-result-base /ws/test_results --verbose; fi; exit \$rc"
         ;;
     deps)
         in_container "rosdep check --from-paths /repo/src --ignore-src --rosdistro jazzy"
