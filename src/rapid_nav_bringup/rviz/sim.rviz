@@ -9,6 +9,7 @@ Panels:
         - /LaserScan1
         - /Camera1
         - /Depth1
+        - /Flow1
         - /Odometry1
       Splitter Ratio: 0.5
     Tree Height: 600
@@ -143,6 +144,20 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /camera/depth_image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Flow
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /perception/flow_vis
       Value: true
     - Angle Tolerance: 0.1
       Class: rviz_default_plugins/Odometry
