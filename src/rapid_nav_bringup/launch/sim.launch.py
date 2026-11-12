@@ -40,6 +40,11 @@ def generate_launch_description():
         DeclareLaunchArgument('x', default_value='0.0', description='Spawn x position (m).'),
         DeclareLaunchArgument('y', default_value='0.0', description='Spawn y position (m).'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='Spawn heading (rad).'),
+        DeclareLaunchArgument(
+            'planning',
+            default_value='false',
+            description='Start the planning stack: AMCL on the arena map, the planner servers.',
+        ),
     ]
     return LaunchDescription(arguments + [OpaqueFunction(function=launch_setup)])
 
@@ -74,6 +79,20 @@ def launch_setup(context):
         ],
     )
     nodes = [gazebo]
+    planning = LaunchConfiguration('planning').perform(context).strip().lower() == 'true'
+    if planning:
+        planning_launch = os.path.join(
+            get_package_share_directory('rapid_nav_navigation'), 'launch', 'planning.launch.py')
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(planning_launch),
+            launch_arguments=[
+                ('localization', 'amcl'),
+                ('use_sim_time', 'true'),
+                ('x', x),
+                ('y', y),
+                ('yaw', yaw),
+            ],
+        ))
 
     if odom_tf == 'ekf':
         nodes.append(Node(
@@ -95,13 +114,17 @@ def launch_setup(context):
             }],
         ))
 
+    rviz_config = os.path.join(share, 'rviz', 'sim.rviz')
+    if planning:
+        rviz_config = os.path.join(
+            get_package_share_directory('rapid_nav_navigation'), 'rviz', 'navigation.rviz')
     if rviz and not headless:
         nodes.append(Node(
             package='rviz2',
             executable='rviz2',
             name='rviz2',
             output='screen',
-            arguments=['-d', os.path.join(share, 'rviz', 'sim.rviz')],
+            arguments=['-d', rviz_config],
             parameters=[{'use_sim_time': True}],
         ))
     return nodes

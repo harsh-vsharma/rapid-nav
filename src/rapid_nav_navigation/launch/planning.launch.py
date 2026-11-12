@@ -63,7 +63,21 @@ def launch_setup(context):
             parameters=[config, {'use_sim_time': use_sim_time}],
         ),
     ]
-    managed = ['map_server', 'planner_server']
+    # AMCL is activated before the planner server: the planner's costmap waits for map -> base_footprint.
+    managed = ['map_server']
+    if localization == 'amcl':
+        nodes.append(Node(
+            package='nav2_amcl',
+            executable='amcl',
+            name='amcl',
+            output='screen',
+            parameters=[config, {
+                'use_sim_time': use_sim_time,
+                'initial_pose': {'x': float(x), 'y': float(y), 'z': 0.0, 'yaw': float(yaw)},
+            }],
+        ))
+        managed.append('amcl')
+    managed.append('planner_server')
     if localization == 'static':
         # Without a simulation, the robot's pose is fixed: map -> odom is the identity and odom ->
         # base_footprint is the initial pose.
