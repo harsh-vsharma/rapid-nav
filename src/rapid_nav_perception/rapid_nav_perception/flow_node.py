@@ -1,17 +1,21 @@
 """
 flow_node: dense optical flow between consecutive camera frames, published as FlowFrame messages.
 
-The subscription callback only pairs the frames and stores the newest pair in a one-slot mailbox. A
-worker thread takes the newest pair, computes the flow and publishes the result, so a slow backend
-drops frames instead of building a queue, and the frames it does take are always consecutive.
+Flow pairs are consecutive RGB frames, so the gap is always one camera period however slow the
+machine is. Depth is needed only for the current frame: the depth image nearest in time to it is
+attached when the pair is processed (its own stamp is kept in the depth image's header).
+
+The RGB callback only pairs the frames and stores the newest pair in a one-slot mailbox. A worker
+thread takes the newest pair, computes the flow and publishes the result, so a slow backend drops
+pairs instead of building a queue.
 """
 
+import collections
 import threading
 import time
 import traceback
 
 import cv2
-from message_filters import ApproximateTimeSynchronizer, Subscriber
 import numpy as np
 from rapid_nav_msgs.msg import FlowFrame
 from rapid_nav_perception.backends import make_backend, torch_available
@@ -24,6 +28,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
 REPORT_PERIOD_S = 5.0
+DEPTH_HISTORY = 30
 
 
 def stamp_seconds(stamp):
@@ -32,7 +37,7 @@ def stamp_seconds(stamp):
 
 
 class FlowNode(Node):
-    """Compute and publish the optical flow of consecutive synced RGB and depth frames."""
+    """Compute and publish the optical flow of consecutive RGB frames, with the matching depth."""
 
     def __init__(self):
         """Read the parameters, build the backend and set up the subscriptions and the worker."""
@@ -42,6 +47,7 @@ class FlowNode(Node):
         self.declare_parameter('width', 320)
         self.declare_parameter('max_rate', 10.0)
         self.declare_parameter('max_pair_gap', 0.2)
+        self.declare_parameter('depth_slop', 0.04)
         self.declare_parameter('weights_path', '')
         self.declare_parameter('raft_iterations', 12)
         self.declare_parameter('num_threads', 0)
@@ -49,6 +55,7 @@ class FlowNode(Node):
         self.target_width = int(self.get_parameter('width').value)
         self.max_rate = float(self.get_parameter('max_rate').value)
         self.max_pair_gap = float(self.get_parameter('max_pair_gap').value)
+        self.depth_slop = float(self.get_parameter('depth_slop').value)
         self.publish_vis = bool(self.get_parameter('publish_vis').value)
 
         requested = str(self.get_parameter('backend').value)
@@ -76,15 +83,16 @@ class FlowNode(Node):
         self.lock = threading.Lock()
         self.received = 0
         self.dropped = 0
+        self.no_depth = 0
+        self.depths = collections.deque(maxlen=DEPTH_HISTORY)
         self.processed = 0
         self.latencies = []
 
         sensor_qos = qos_profile_sensor_data
-        self.rgb_sub = Subscriber(self, Image, '/camera/image', qos_profile=sensor_qos)
-        self.depth_sub = Subscriber(self, Image, '/camera/depth_image', qos_profile=sensor_qos)
-        self.sync = ApproximateTimeSynchronizer([self.rgb_sub, self.depth_sub], queue_size=10,
-                                                slop=0.01)
-        self.sync.registerCallback(self.on_pair)
+        self.rgb_sub = self.create_subscription(
+            Image, '/camera/image', self.on_rgb, sensor_qos)
+        self.depth_sub = self.create_subscription(
+            Image, '/camera/depth_image', self.on_depth, sensor_qos)
         self.info_sub = self.create_subscription(
             CameraInfo, '/camera/camera_info', self.on_info, sensor_qos)
         self.flow_pub = self.create_publisher(FlowFrame, '/perception/flow_frame', 10)
@@ -115,16 +123,30 @@ class FlowNode(Node):
         self.get_logger().info('flow_node: backend={} device={} size={}x{} torch={}'.format(
             self.backend.name, self.device, width, height, self.torch_version or 'none'))
 
-    def on_pair(self, rgb_msg, depth_msg):
-        """Pair the frame with the previous one and put a close pair into the mailbox."""
+    def on_depth(self, msg):
+        """Keep the recent depth images; the worker picks the one nearest to its frame."""
+        with self.lock:
+            self.depths.append((stamp_seconds(msg.header.stamp), msg))
+
+    def nearest_depth(self, stamp):
+        """Return the kept depth image nearest in time to stamp, or None beyond depth_slop."""
+        with self.lock:
+            candidates = list(self.depths)
+        if not candidates:
+            return None
+        depth_stamp, msg = min(candidates, key=lambda item: abs(item[0] - stamp))
+        return msg if abs(depth_stamp - stamp) <= self.depth_slop else None
+
+    def on_rgb(self, rgb_msg):
+        """Pair the frame with the previous RGB frame and put a close pair into the mailbox."""
         stamp = stamp_seconds(rgb_msg.header.stamp)
-        current = (rgb_msg, depth_msg, stamp)
+        current = (rgb_msg, stamp)
         with self.lock:
             self.received += 1
         if self.previous is None:
             self.previous = current
             return
-        previous_stamp = self.previous[2]
+        previous_stamp = self.previous[1]
         gap = stamp - previous_stamp
         if gap <= 0.0 or gap > self.max_pair_gap:
             with self.lock:
@@ -166,7 +188,12 @@ class FlowNode(Node):
 
     def process(self, pair, info):
         """Compute the flow of one pair and publish the FlowFrame (and the picture)."""
-        (prev_rgb_msg, _prev_depth_msg, _), (cur_rgb_msg, cur_depth_msg, _) = pair
+        (prev_rgb_msg, _), (cur_rgb_msg, cur_stamp) = pair
+        cur_depth_msg = self.nearest_depth(cur_stamp)
+        if cur_depth_msg is None:
+            with self.lock:
+                self.no_depth += 1
+            return
         width, height = self.size
         camera_height, camera_width = int(info.height), int(info.width)
         first = self.resize_rgb(image_to_array(prev_rgb_msg), width, height)
@@ -200,7 +227,7 @@ class FlowNode(Node):
         h, w, encoding, step, data = array_to_image_fields(flow, '32FC2')
         message.flow = self.make_image(cur_rgb_msg.header, h, w, encoding, step, data)
         h, w, encoding, step, data = array_to_image_fields(depth, '32FC1')
-        message.depth = self.make_image(cur_rgb_msg.header, h, w, encoding, step, data)
+        message.depth = self.make_image(cur_depth_msg.header, h, w, encoding, step, data)
         message.camera_info = scaled
         message.backend = self.backend.name
         message.latency_ms = float(latency_ms)
@@ -241,10 +268,11 @@ class FlowNode(Node):
             latencies = list(self.latencies)
             self.latencies = []
             received, dropped, processed = self.received, self.dropped, self.processed
+            no_depth = self.no_depth
         median = float(np.median(latencies)) if latencies else float('nan')
         self.get_logger().info(
-            'flow_node: received={} processed={} dropped_too_far={} '
-            'median_latency_ms={:.1f}'.format(received, processed, dropped, median))
+            'flow_node: received={} processed={} dropped_too_far={} no_depth={} '
+            'median_latency_ms={:.1f}'.format(received, processed, dropped, no_depth, median))
 
     def stop(self):
         """Stop the worker thread and wait for it."""

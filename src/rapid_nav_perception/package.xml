@@ -16,7 +16,6 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>
-  <exec_depend>message_filters</exec_depend>
   <exec_depend>rapid_nav_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>

@@ -34,8 +34,8 @@ stage named in the [README](../README.md) status table.
 
 ## Perception (implemented in S2)
 
-The flow node (`rapid_nav_perception`) takes the synchronised RGB and depth images and computes the optical flow
-between consecutive pairs. Two backends are built behind one interface, so that the adaptive routing of step 2
+The flow node (`rapid_nav_perception`) computes the optical flow between consecutive RGB frames and attaches
+the depth image nearest in time to the second one. Two backends are built behind one interface, so that the adaptive routing of step 2
 (planned for S7) can select between them:
 
 - `farneback`: OpenCV's dense Farnebäck flow on grey images; no weights; always available.

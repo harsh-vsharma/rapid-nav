@@ -36,7 +36,7 @@ class FarnebackFlow(FlowBackend):
         prev_grey = cv2.cvtColor(np.ascontiguousarray(prev_rgb), cv2.COLOR_RGB2GRAY)
         curr_grey = cv2.cvtColor(np.ascontiguousarray(curr_rgb), cv2.COLOR_RGB2GRAY)
         flow = cv2.calcOpticalFlowFarneback(
-            prev_grey, curr_grey, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            prev_grey, curr_grey, None, 0.5, 5, 21, 3, 5, 1.2, 0)
         return flow.astype(np.float32)
 
 

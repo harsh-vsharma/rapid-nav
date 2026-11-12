@@ -7,9 +7,10 @@ ego-motion stage.
 
 ## What is computed, and why consecutive pairs
 
-Flow is computed between two consecutive synchronised camera frames (the RGB image and the depth image with the
-same stamp). A pair is never formed from a frame and a much older one: the displacement between the two images
-must stay small, however slow the machine is. Pairs whose gap is more than 0.2 s of simulated time are dropped.
+Flow is computed between two consecutive RGB frames, so the gap is one camera period (1/30 s at full rate). A pair
+is never formed from a frame and a much older one: the displacement between the two images must stay small, however
+slow the machine is. Pairs whose gap is more than 0.2 s of simulated time are dropped. Depth is needed only for the
+second frame: the depth image nearest in time to it (within 0.04 s) is attached, with its own stamp.
 
 The flow node keeps only the newest pair waiting. A worker thread takes the newest pair, computes the flow and
 publishes the result. A slow backend therefore drops frames instead of building up a queue.
@@ -66,6 +67,7 @@ The defaults are in `config/perception.yaml`. The launch file exposes four of th
 | `width` | `320` | processing width in pixels; RAFT needs multiples of 8 and the node rounds down |
 | `max_rate` | `10.0` | largest processing rate in Hz of wall-clock time (0: no limit) |
 | `max_pair_gap` | `0.2` | largest gap in simulated seconds between the two frames of a pair |
+| `depth_slop` | `0.04` | largest time difference in seconds between the current RGB frame and the depth image attached to it |
 | `weights_path` | `''` | a state dict for RAFT, instead of torchvision's default weights |
 | `raft_iterations` | `12` | RAFT refinement iterations |
 | `num_threads` | `0` | PyTorch threads (0: the library's default) |
