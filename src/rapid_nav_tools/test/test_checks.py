@@ -126,3 +126,50 @@ def test_planar_delta_distance_and_wrapped_yaw():
     assert yaw_change == pytest.approx(0.0831853, abs=1e-6)
     distance, _ = planar_delta((1.0, 1.0, 0.0), (4.0, 5.0, 0.0))
     assert distance == pytest.approx(5.0)
+
+
+def test_predicted_rotation_flow_is_fx_tan_angle():
+    """A turn at 0.6 rad/s for 0.1 s moves the image by fx tan(0.06) pixels."""
+    from rapid_nav_tools.checks import predicted_rotation_flow
+    assert predicted_rotation_flow(231.0, 0.6, 0.1) == pytest.approx(231.0 * math.tan(0.06))
+    assert predicted_rotation_flow(231.0, -0.6, 0.1) == pytest.approx(-231.0 * math.tan(0.06))
+    assert predicted_rotation_flow(231.0, 0.0, 0.1) == pytest.approx(0.0)
+
+
+def test_central_window_takes_the_middle_half():
+    """Half the fraction in both directions: 120 of 240 rows and 160 of 320 columns, centred."""
+    from rapid_nav_tools.checks import central_window
+    image = np.arange(240 * 320).reshape(240, 320)
+    window = central_window(image, 0.5)
+    assert window.shape == (120, 160)
+    assert window[0, 0] == image[60, 80]
+    assert window[-1, -1] == image[179, 239]
+
+
+def test_band_selects_the_bottom_quarter_and_the_side_thirds():
+    """Take rows 180 to 239 for the bottom quarter and columns 0 to 106 for the left third."""
+    from rapid_nav_tools.checks import band
+    image = np.zeros((240, 320))
+    assert band(image, 0.75, 1.0, 0.0, 1.0).shape == (60, 320)
+    assert band(image, 0.0, 1.0, 0.0, 1.0 / 3.0).shape == (240, 107)
+    assert band(image, 0.0, 1.0, 2.0 / 3.0, 1.0).shape == (240, 107)
+
+
+def test_transform_points_rotation_and_translation():
+    """A yaw of 90 degrees turns +x into +y, then the translation is added."""
+    from rapid_nav_tools.checks import transform_points
+    quaternion = (0.0, 0.0, math.sqrt(0.5), math.sqrt(0.5))
+    points = transform_points([[1.0, 0.0, 0.0]], (0.0, 0.0, 0.5), quaternion)
+    assert points[0] == pytest.approx([0.0, 1.0, 0.5], abs=1e-12)
+    identity = transform_points([[1.0, 2.0, 3.0]], (1.0, 1.0, 1.0), (0.0, 0.0, 0.0, 1.0))
+    assert identity[0] == pytest.approx([2.0, 3.0, 4.0])
+
+
+def test_scan_range_at_picks_the_nearest_beam():
+    """The beam nearest to the bearing is returned; bearings outside the scan give NaN."""
+    from rapid_nav_tools.checks import scan_range_at
+    ranges = [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert scan_range_at(0.1, -1.0, 0.5, ranges) == pytest.approx(3.0)
+    assert scan_range_at(-1.0, -1.0, 0.5, ranges) == pytest.approx(1.0)
+    assert math.isnan(scan_range_at(2.0, -1.0, 0.5, ranges))
+    assert math.isnan(scan_range_at(-2.0, -1.0, 0.5, ranges))

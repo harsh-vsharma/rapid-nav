@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'sim_check = rapid_nav_tools.sim_check:main',
+            'perception_check = rapid_nav_tools.perception_check:main',
         ],
     },
 )

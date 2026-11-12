@@ -45,9 +45,9 @@ def rate_verdict(count, rate, expected, profile):
     """
     Return PASS, WARN or FAIL for a measured topic rate.
 
-    native: PASS at 80 % of the expected rate or more, WARN when messages arrive but slower,
-    FAIL when none arrive. docker: PASS when messages arrive, FAIL when none arrive (software
-    rendering makes the rates low, so only presence is checked).
+    native: PASS at 80 % of the expected rate or more, WARN when messages arrive but slower, FAIL
+    when none arrive. docker: PASS when messages arrive, FAIL when none arrive (software rendering
+    makes the rates low, so only presence is checked).
     """
     if profile not in PROFILES:
         raise ValueError("profile must be 'native' or 'docker', got {!r}".format(profile))
@@ -100,3 +100,48 @@ def planar_delta(start_xyyaw, end_xyyaw):
     dy = end_xyyaw[1] - start_xyyaw[1]
     distance = math.hypot(dx, dy)
     return (distance, angle_diff(end_xyyaw[2], start_xyyaw[2]))
+
+
+def predicted_rotation_flow(fx, omega, dt):
+    """Return the image shift in pixels of a turn at omega rad/s for dt s: fx tan(omega dt)."""
+    return fx * math.tan(omega * dt)
+
+
+def central_window(array, fraction):
+    """Return the central window that covers the given fraction of the image height and width."""
+    array = np.asarray(array)
+    height, width = array.shape[0], array.shape[1]
+    top = int(round(height * (1.0 - fraction) / 2.0))
+    left = int(round(width * (1.0 - fraction) / 2.0))
+    return array[top:height - top, left:width - left]
+
+
+def band(array, top_fraction, bottom_fraction, left_fraction, right_fraction):
+    """Return the part of an image between the given fractions of its height and of its width."""
+    array = np.asarray(array)
+    height, width = array.shape[0], array.shape[1]
+    return array[int(round(height * top_fraction)):int(round(height * bottom_fraction)),
+                 int(round(width * left_fraction)):int(round(width * right_fraction))]
+
+
+def transform_points(points, translation, quaternion):
+    """Return points (N, 3) rotated by the quaternion (x, y, z, w), then translated."""
+    x, y, z, w = quaternion
+    rotation = np.array([
+        [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+        [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+        [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+    ])
+    points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    return points @ rotation.T + np.asarray(translation, dtype=np.float64)
+
+
+def scan_range_at(bearing, angle_min, increment, ranges):
+    """Return the range of the beam nearest to a bearing (rad); NaN when outside the scan."""
+    ranges = np.asarray(ranges, dtype=np.float64)
+    if ranges.size == 0 or increment == 0.0:
+        return float('nan')
+    index = int(round((bearing - angle_min) / increment))
+    if index < 0 or index >= ranges.size:
+        return float('nan')
+    return float(ranges[index])
