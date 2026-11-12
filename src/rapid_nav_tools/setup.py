@@ -14,12 +14,14 @@ setup(
     zip_safe=True,
     maintainer='Harsh Vardhan',
     maintainer_email='harsh.v.sharma@outlook.com',
-    description='Checks of the RAPID-NAV simulation: sim_check and the pure functions behind it.',
+    description='Checks of the RAPID-NAV simulation and planners, and the path viewer.',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'sim_check = rapid_nav_tools.sim_check:main',
+            'planner_check = rapid_nav_tools.planner_check:main',
+            'path_viewer = rapid_nav_tools.path_viewer:main',
         ],
     },
 )

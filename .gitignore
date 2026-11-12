@@ -42,3 +42,7 @@ rosbag2_*/
 .idea/
 *.swp
 *~
+
+# Local check bundles
+planner_check_*/
+perception_check_*/

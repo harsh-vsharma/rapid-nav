@@ -1,12 +1,14 @@
 """Start the planning stack: the map, the planner servers with our planner, and the localisation."""
 
 import os
+import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+import yaml
 
 BUILT_IN_MAPS = ('arena', 'maze')
 
@@ -23,6 +25,8 @@ def generate_launch_description():
         DeclareLaunchArgument('x', default_value='0.0', description='Initial pose x (m).'),
         DeclareLaunchArgument('y', default_value='0.0', description='Initial pose y (m).'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='Initial pose yaw (rad).'),
+        DeclareLaunchArgument('path_viewer', default_value='true',
+                              description="Publish every planner's path for each goal (AMCL only)."),
         OpaqueFunction(function=launch_setup),
     ])
 
@@ -34,16 +38,33 @@ def map_yaml_path(name):
     return name
 
 
+def planning_config(config_path, use_sim_time):
+    """
+    Return a copy of the planning YAML whose global costmap uses this launch's clock.
+
+    The costmap runs in a node of its own, which the launch's use_sim_time does not reach. Without a
+    simulated clock its map update never runs, and the planners would plan over free space.
+    """
+    with open(config_path, encoding='utf-8') as handle:
+        data = yaml.safe_load(handle)
+    data['global_costmap']['global_costmap']['ros__parameters']['use_sim_time'] = use_sim_time
+    descriptor, path = tempfile.mkstemp(prefix='planning_', suffix='.yaml')
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(data, handle)
+    return path
+
+
 def launch_setup(context):
     """Resolve the arguments and build the nodes of the planning stack."""
     share = get_package_share_directory('rapid_nav_navigation')
-    config = os.path.join(share, 'config', 'planning.yaml')
+    use_sim_time = LaunchConfiguration('use_sim_time').perform(context).strip().lower() == 'true'
+    config = planning_config(os.path.join(share, 'config', 'planning.yaml'), use_sim_time)
     map_yaml = map_yaml_path(LaunchConfiguration('map').perform(context))
     localization = LaunchConfiguration('localization').perform(context).strip().lower()
-    use_sim_time = LaunchConfiguration('use_sim_time').perform(context).strip().lower() == 'true'
     x = LaunchConfiguration('x').perform(context)
     y = LaunchConfiguration('y').perform(context)
     yaw = LaunchConfiguration('yaw').perform(context)
+    path_viewer = LaunchConfiguration('path_viewer').perform(context).strip().lower() == 'true'
     if localization not in ('amcl', 'static'):
         raise RuntimeError("localization must be 'amcl' or 'static', got '{}'".format(localization))
 
@@ -78,6 +99,14 @@ def launch_setup(context):
         ))
         managed.append('amcl')
     managed.append('planner_server')
+    if localization == 'amcl' and path_viewer:
+        nodes.append(Node(
+            package='rapid_nav_tools',
+            executable='path_viewer',
+            name='path_viewer',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        ))
     if localization == 'static':
         # Without a simulation, the robot's pose is fixed: map -> odom is the identity and odom ->
         # base_footprint is the initial pose.

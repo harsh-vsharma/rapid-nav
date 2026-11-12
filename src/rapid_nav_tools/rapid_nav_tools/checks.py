@@ -100,3 +100,84 @@ def planar_delta(start_xyyaw, end_xyyaw):
     dy = end_xyyaw[1] - start_xyyaw[1]
     distance = math.hypot(dx, dy)
     return (distance, angle_diff(end_xyyaw[2], start_xyyaw[2]))
+
+
+def _polyline(points):
+    """Return the points as an (N, 2) float array."""
+    return np.asarray(points, dtype=np.float64).reshape(-1, 2)
+
+
+def path_length(points):
+    """Return the length in metres of a polyline of (x, y) points; zero with fewer than two."""
+    points = _polyline(points)
+    if points.shape[0] < 2:
+        return 0.0
+    steps = np.diff(points, axis=0)
+    return float(np.hypot(steps[:, 0], steps[:, 1]).sum())
+
+
+def max_step(points):
+    """Return the longest distance in metres between consecutive points; zero if fewer than two."""
+    points = _polyline(points)
+    if points.shape[0] < 2:
+        return 0.0
+    steps = np.diff(points, axis=0)
+    return float(np.hypot(steps[:, 0], steps[:, 1]).max())
+
+
+def heading_change_per_metre(points):
+    """
+    Return the total turning of a polyline in degrees per metre of its length.
+
+    Segments of zero length are ignored; the turn at each joint is wrapped to (-pi, pi]. A
+    straight line, or a path with fewer than two moving segments, turns by zero.
+    """
+    points = _polyline(points)
+    steps = np.diff(points, axis=0)
+    lengths = np.hypot(steps[:, 0], steps[:, 1])
+    moving = lengths > 1e-9
+    steps = steps[moving]
+    lengths = lengths[moving]
+    total = float(lengths.sum())
+    if steps.shape[0] < 2 or total <= 0.0:
+        return 0.0
+    headings = np.arctan2(steps[:, 1], steps[:, 0])
+    turns = np.diff(headings)
+    turns = np.abs(np.arctan2(np.sin(turns), np.cos(turns)))
+    return math.degrees(float(turns.sum())) / total
+
+
+def clearances(points, occupied_xy, chunk=128):
+    """
+    Return, for each point, the distance in metres to the nearest occupied cell centre.
+
+    points and occupied_xy are (N, 2) arrays in metres. The pairwise distances are computed in
+    blocks of `chunk` points to bound the memory. With no occupied cell the clearance is infinite.
+    """
+    points = _polyline(points)
+    occupied = _polyline(occupied_xy)
+    result = np.full(points.shape[0], np.inf)
+    if occupied.shape[0] == 0:
+        return result
+    for start in range(0, points.shape[0], chunk):
+        block = points[start:start + chunk]
+        offsets = block[:, None, :] - occupied[None, :, :]
+        result[start:start + chunk] = np.sqrt((offsets ** 2).sum(axis=2)).min(axis=1)
+    return result
+
+
+def occupied_cells_xy(grid, resolution, origin):
+    """
+    Return the centres in metres, as an (N, 2) array, of the occupied cells of a grid.
+
+    grid is indexed [row, column] with row 0 at the bottom of the map, as OccupancyGrid data is
+    once reshaped. A cell is occupied when its value is 65 or more; unknown cells (-1) are not.
+    origin is the (x, y) of the lower-left corner of the lower-left cell.
+    """
+    values = np.asarray(grid)
+    rows, columns = np.nonzero(values >= 65)
+    x = origin[0] + (columns + 0.5) * resolution
+    y = origin[1] + (rows + 0.5) * resolution
+    if rows.size == 0:
+        return np.zeros((0, 2))
+    return np.column_stack([x, y])

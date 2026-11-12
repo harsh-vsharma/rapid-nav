@@ -1,0 +1,85 @@
+# Planner queries for planner_check, per map. Poses are in the map frame (metres, radians); the
+# map frame is the world frame. expect: success (a path is returned), goal_occupied (the goal is in
+# an obstacle) or goal_outside (the goal is outside the map). Every start is free space.
+arena:
+  - name: across the room
+    start: {x: -4.5, y: -3.5, yaw: 0.0}
+    goal: {x: 4.5, y: 3.5, yaw: 0.0}
+    expect: success
+  - name: round the crate at (2, 1.5)
+    start: {x: 0.5, y: 1.5, yaw: 0.0}
+    goal: {x: 3.5, y: 1.5, yaw: 0.0}
+    expect: success
+  - name: round the crate at (-2, -1.5)
+    start: {x: -3.5, y: -1.5, yaw: 0.0}
+    goal: {x: -0.5, y: -1.5, yaw: 0.0}
+    expect: success
+  - name: round the crate at (3, -2.5)
+    start: {x: 3.0, y: -3.3, yaw: 0.0}
+    goal: {x: 3.0, y: -1.0, yaw: 0.0}
+    expect: success
+  - name: round the crate at (-3, 2.5)
+    start: {x: -4.0, y: 2.5, yaw: 0.0}
+    goal: {x: -1.5, y: 2.5, yaw: 0.0}
+    expect: success
+  - name: between a pillar and the wall
+    start: {x: -1.5, y: 3.6, yaw: 0.0}
+    goal: {x: 1.5, y: 3.6, yaw: 0.0}
+    expect: success
+  - name: into a corner
+    start: {x: 0.0, y: 0.0, yaw: 0.0}
+    goal: {x: 4.7, y: 3.7, yaw: 0.0}
+    expect: success
+  - name: a short one
+    start: {x: -0.5, y: 0.0, yaw: 0.0}
+    goal: {x: 0.0, y: 0.0, yaw: 0.0}
+    expect: success
+  - name: start equals goal
+    start: {x: 0.5, y: -0.5, yaw: 0.0}
+    goal: {x: 0.5, y: -0.5, yaw: 0.0}
+    expect: success
+  - name: goal inside a crate
+    start: {x: -1.0, y: 0.0, yaw: 0.0}
+    goal: {x: 2.0, y: 1.5, yaw: 0.0}
+    expect: goal_occupied
+  - name: goal outside the map
+    start: {x: -1.0, y: 0.0, yaw: 0.0}
+    goal: {x: 7.0, y: 0.0, yaw: 0.0}
+    expect: goal_outside
+maze:
+  - name: round the narrow door
+    start: {x: -2.5, y: -3.0, yaw: 0.0}
+    goal: {x: 2.5, y: -3.0, yaw: 0.0}
+    expect: success
+  - name: corner to corner
+    start: {x: -4.0, y: -3.5, yaw: 0.0}
+    goal: {x: 4.0, y: 3.5, yaw: 0.0}
+    expect: success
+  - name: the straight line runs into the U-trap
+    start: {x: 1.0, y: 0.0, yaw: 0.0}
+    goal: {x: 4.5, y: 0.0, yaw: 0.0}
+    expect: success
+  - name: into the dead end
+    start: {x: -1.0, y: 3.0, yaw: 0.0}
+    goal: {x: 2.0, y: 2.6, yaw: 0.0}
+    expect: success
+  - name: a short one
+    start: {x: -3.0, y: -1.0, yaw: 0.0}
+    goal: {x: -2.5, y: -1.0, yaw: 0.0}
+    expect: success
+  - name: start equals goal
+    start: {x: -2.0, y: 2.0, yaw: 0.0}
+    goal: {x: -2.0, y: 2.0, yaw: 0.0}
+    expect: success
+  - name: diagonal across the left room
+    start: {x: -4.0, y: 3.0, yaw: 0.0}
+    goal: {x: -1.0, y: -3.0, yaw: 0.0}
+    expect: success
+  - name: goal inside the divider
+    start: {x: -2.0, y: 2.0, yaw: 0.0}
+    goal: {x: 0.0, y: 2.5, yaw: 0.0}
+    expect: goal_occupied
+  - name: goal outside the map
+    start: {x: -2.0, y: 2.0, yaw: 0.0}
+    goal: {x: 6.0, y: 0.0, yaw: 0.0}
+    expect: goal_outside
