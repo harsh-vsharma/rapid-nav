@@ -32,6 +32,21 @@ stage named in the [README](../README.md) status table.
    The geometry-only baseline is Nav2's standard obstacle layer. The measures are collision rate, minimum clearance,
    success, time to goal, path length, replanning count, perception latency and RAFT share.
 
+## Perception (implemented in S2)
+
+The flow node (`rapid_nav_perception`) takes the synchronised RGB and depth images and computes the optical flow
+between consecutive pairs. Two backends are built behind one interface, so that the adaptive routing of step 2
+(planned for S7) can select between them:
+
+- `farneback`: OpenCV's dense Farnebäck flow on grey images; no weights; always available.
+- `raft_small`, `raft_large`: torchvision's RAFT; needs PyTorch, which is optional. Without it the node runs Farnebäck
+  and says so in one warning.
+
+Each result is one `rapid_nav_msgs/FlowFrame`: the flow (`32FC2`), the depth resized to the flow size, the camera
+intrinsics scaled to that size, both stamps, the backend that ran and the compute latency. The stage that follows
+(S3, ego-motion) subscribes to that message alone. Details, parameters and the PyTorch installation are in
+[perception.md](perception.md).
+
 ## Frames
 
 The robot's frames are implemented in S1 and match the frame table in [robot.md](robot.md):

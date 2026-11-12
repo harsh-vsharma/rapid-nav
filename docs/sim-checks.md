@@ -114,3 +114,38 @@ Zip the following into one file and send it to the owner:
 
 Also send your machine's details: the output of `nvidia-smi` if you have an NVIDIA GPU, otherwise `lscpu | head -n 20`,
 and `free -h`.
+
+## Perception (S2)
+
+This section checks the optical flow on the robot's camera. Do steps 1 to 9 above first; the simulation needs the
+S1 robot as well. About 15 minutes.
+
+1. **Build** the same workspace as in step 1 (`colcon build --symlink-install`), with the Python environment for
+   PyTorch active if you want to test RAFT (see [perception.md](perception.md), "Installing PyTorch natively").
+   Keep the build output if it shows errors.
+2. **Farnebäck, with the simulation running:**
+
+   ```bash
+   ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
+   ```
+
+   The terminal prints a line `flow_node: backend=farneback device=cpu size=320x240 torch=...`. In RViz the image
+   panel "Flow" shows the flow picture. Leave the launch running.
+3. **Teleoperate** in a second terminal (`ros2 run teleop_twist_keyboard teleop_twist_keyboard`) for about 30
+   seconds: drive forward, then turn on the spot. Take a screenshot of RViz with the flow picture visible, as
+   `rviz-flow.png`, while the robot is turning.
+4. **The check** in a third terminal, while the simulation runs and the robot is not touched:
+
+   ```bash
+   ros2 run rapid_nav_tools perception_check
+   ```
+
+   It drives the robot forward and turns it on the spot, as the S1 check does. It prints a table and writes a
+   `perception_check_<time>/` folder. Keep the terminal output.
+5. **PyTorch, if installed:** stop the simulation (Ctrl+C), then start it again with RAFT and repeat steps 2 to 4 with
+   `flow_backend:=raft_small` (and `flow_device:=cuda` if the machine has an NVIDIA GPU). The startup line must say
+   `backend=raft_small`. Keep the second folder and its terminal output.
+
+   If PyTorch is not installed, skip this step and say so when you send the files back.
+6. **Send back** the `perception_check_*` folders, `rviz-flow.png`, and the terminal output of the launches with
+   errors, together with the machine details from step 9 of the S1 section.
