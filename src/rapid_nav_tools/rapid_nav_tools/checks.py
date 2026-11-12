@@ -107,6 +107,25 @@ def predicted_rotation_flow(fx, omega, dt):
     return fx * math.tan(omega * dt)
 
 
+def predicted_turn_flow_u(u_offset, depth, fx, theta, lever):
+    """
+    Return the horizontal flow in pixels of a turn in place by theta rad (positive = left).
+
+    The camera sits `lever` metres ahead of the turning axis, so it also moves sideways; that adds
+    flow that depends on the depth. u_offset is u - cx per pixel, depth the optical z in metres
+    (arrays of the same shape). Exact for a level camera turning about a vertical axis.
+    """
+    u_offset = np.asarray(u_offset, dtype=np.float64)
+    depth = np.asarray(depth, dtype=np.float64)
+    forward = depth                       # along the robot's x before the turn
+    left = -u_offset * depth / fx         # along the robot's y (optical -x)
+    forward_rel = forward - lever * (math.cos(theta) - 1.0)
+    left_rel = left - lever * math.sin(theta)
+    z_new = forward_rel * math.cos(theta) + left_rel * math.sin(theta)
+    x_new = forward_rel * math.sin(theta) - left_rel * math.cos(theta)
+    return fx * x_new / z_new - u_offset
+
+
 def central_window(array, fraction):
     """Return the central window that covers the given fraction of the image height and width."""
     array = np.asarray(array)

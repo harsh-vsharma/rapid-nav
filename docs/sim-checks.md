@@ -140,7 +140,8 @@ S1 robot as well. About 15 minutes.
    ros2 run rapid_nav_tools perception_check
    ```
 
-   It drives the robot forward and turns it on the spot, as the S1 check does. It prints a table and writes a
+   It drives the robot 2.4 m forward and then turns it once around on the spot (about 30 s of simulated time).
+   **Do not touch the robot or the keyboard during this.** It prints a table and writes a
    `perception_check_<time>/` folder. Keep the terminal output.
 5. **PyTorch, if installed:** stop the simulation (Ctrl+C), then start it again with RAFT and repeat steps 2 to 4 with
    `flow_backend:=raft_small` (and `flow_device:=cuda` if the machine has an NVIDIA GPU). The startup line must say

@@ -42,6 +42,7 @@ from rapid_nav_tools.checks import (
     band,
     central_window,
     predicted_rotation_flow,
+    predicted_turn_flow_u,
     scan_range_at,
     transform_points,
 )
@@ -61,10 +62,10 @@ SETTLE_SIM_S = 2.0
 REST_SIM_S = 2.0
 CMD_PERIOD_S = 0.05
 DRIVE_SPEED = 0.3
-DRIVE_TIME = 4.0
+DRIVE_TIME = 8.0  # 2.4 m along the free strip; long enough for slow backends
 STOP_TIME = 1.0
 TURN_RATE = 0.6
-TURN_TIME = 5.236
+TURN_TIME = 10.472  # one full turn at TURN_RATE
 SKIP_FIRST_S = 1.0
 MIN_FRAMES = 3
 GEOMETRY_COLUMN_STEP = 4
@@ -74,7 +75,7 @@ GEOMETRY_WITHIN_M = 0.10
 GEOMETRY_WITHIN_FRACTION = 0.80
 REST_MEDIAN_PX = 0.25
 FORWARD_FLOOR_V_PX = 0.3
-ROTATE_RATIO = (0.85, 1.15)
+ROTATE_RATIO = (0.90, 1.10)
 ROTATE_VERTICAL_RATIO = 0.15
 IMAGE_KEEP = 60
 FLOW_LAG_S = 180.0
@@ -96,6 +97,7 @@ class PerceptionCheck(Node):
         self.flow_records = []
         self.first_flow = None
         self.depth = None
+        self.lever = None
         self.info = None
         self.scan = None
         self.imu = []
@@ -177,6 +179,8 @@ class PerceptionCheck(Node):
         right = band(flow, 0.0, 1.0, 2.0 / 3.0, 1.0)
         centre = central_window(flow, 0.5)
         fx = float(msg.camera_info.k[0])
+        cx = float(msg.camera_info.k[2])
+        predicted_u = self.predicted_centre_u(msg, fx, cx, omega * dt)
         return {
             'stamp': stamp,
             'previous_stamp': previous,
@@ -191,7 +195,33 @@ class PerceptionCheck(Node):
             'centre_u': float(np.median(centre[..., 0])),
             'centre_v': float(np.median(centre[..., 1])),
             'gyro_z': omega,
+            'predicted_centre_u': predicted_u,
         }
+
+    def camera_lever(self):
+        """Return the camera's distance ahead of the turning axis (base_link to camera_link x)."""
+        if self.lever is None:
+            try:
+                transform = self.tf_buffer.lookup_transform('base_link', 'camera_link', Time())
+                self.lever = float(transform.transform.translation.x)
+            except tf2_ros.TransformException:
+                return None
+        return self.lever
+
+    def predicted_centre_u(self, msg, fx, cx, theta):
+        """Return the median predicted u-flow of a turn over the central window, or NaN."""
+        lever = self.camera_lever()
+        if lever is None or math.isnan(theta):
+            return float('nan')
+        depth = image_to_array(msg.depth)
+        u_offset = np.broadcast_to(np.arange(depth.shape[1], dtype=np.float64) - cx, depth.shape)
+        centre_depth = central_window(depth, 0.5)
+        centre_u = central_window(u_offset, 0.5)
+        valid = np.isfinite(centre_depth) & (centre_depth > 0.0)
+        if not valid.any():
+            return float('nan')
+        predicted = predicted_turn_flow_u(centre_u[valid], centre_depth[valid], fx, theta, lever)
+        return float(np.median(predicted))
 
     def mean_gyro(self, start, end):
         """Return the mean gyro z between two stamps; NaN when no IMU sample lies between."""
@@ -385,7 +415,12 @@ def check_forward(node, report, start, stop):
 
 
 def check_rotation(node, report, start, stop):
-    """While turning in place, the central flow matches the gyro's prediction."""
+    """
+    While turning in place, the central flow matches the gyro's prediction.
+
+    The prediction is per pixel and includes the camera's lever arm (it sits ahead of the turning
+    axis, so near points flow more); the rotation-only ratio is kept in results.json.
+    """
     frames = node.frames_between(start + SKIP_FIRST_S, stop)
     usable = [r for r in frames if not math.isnan(r['gyro_z']) and r['dt'] > 0.0]
     if len(usable) < MIN_FRAMES:
@@ -394,11 +429,14 @@ def check_rotation(node, report, start, stop):
         return
     ratios = []
     verticals = []
+    rotation_only = []
     for record in usable:
-        predicted = predicted_rotation_flow(record['fx'], record['gyro_z'], record['dt'])
-        if abs(predicted) < 1e-6:
+        predicted = record['predicted_centre_u']
+        if math.isnan(predicted) or abs(predicted) < 1e-6:
             continue
         ratios.append(record['centre_u'] / predicted)
+        rotation_only.append(record['centre_u'] / predicted_rotation_flow(
+            record['fx'], record['gyro_z'], record['dt']))
         verticals.append(abs(record['centre_v']) / abs(predicted))
     if len(ratios) < MIN_FRAMES:
         verdict = 'WARN' if node.profile == 'docker' else 'FAIL'
@@ -407,7 +445,9 @@ def check_rotation(node, report, start, stop):
         return
     ratio = float(np.median(ratios))
     vertical = float(np.median(verticals))
-    node.values['rotation'] = {'frames': len(ratios), 'ratio': ratio, 'vertical': vertical}
+    node.values['rotation'] = {'frames': len(ratios), 'ratio': ratio, 'vertical': vertical,
+                               'ratio_rotation_only': float(np.median(rotation_only)),
+                               'lever_m': node.lever}
     report.add('rotation frames', str(len(ratios)), '>= {}'.format(MIN_FRAMES), 'INFO')
     report.add('rotation ratio (flow / gyro prediction)', format_number(ratio, 3),
                '{:.2f} to {:.2f}'.format(*ROTATE_RATIO),

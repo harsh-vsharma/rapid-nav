@@ -10,6 +10,7 @@ from rapid_nav_tools.checks import (
     colourise_depth,
     expected_fx,
     planar_delta,
+    predicted_turn_flow_u,
     quaternion_from_rpy,
     rate_verdict,
     scan_image,
@@ -173,3 +174,19 @@ def test_scan_range_at_picks_the_nearest_beam():
     assert scan_range_at(-1.0, -1.0, 0.5, ranges) == pytest.approx(1.0)
     assert math.isnan(scan_range_at(2.0, -1.0, 0.5, ranges))
     assert math.isnan(scan_range_at(-2.0, -1.0, 0.5, ranges))
+
+
+def test_turn_flow_without_lever_is_pure_rotation():
+    """With no lever arm the centre pixel moves fx tan(theta), at any depth."""
+    for depth in (0.5, 5.0):
+        value = predicted_turn_flow_u(np.array([0.0]), np.array([depth]), 231.0, 0.05, 0.0)
+        assert value[0] == pytest.approx(231.0 * math.tan(0.05), rel=1e-9)
+
+
+def test_turn_flow_lever_adds_depth_dependent_flow():
+    """A lever arm adds about fx * lever * theta / depth at the centre, in the same direction."""
+    near = predicted_turn_flow_u(np.array([0.0]), np.array([1.0]), 231.0, 0.05, 0.175)[0]
+    far = predicted_turn_flow_u(np.array([0.0]), np.array([100.0]), 231.0, 0.05, 0.175)[0]
+    rotation = 231.0 * math.tan(0.05)
+    assert far == pytest.approx(rotation, rel=0.01)
+    assert near - rotation == pytest.approx(231.0 * 0.175 * 0.05 / 1.0, rel=0.05)
