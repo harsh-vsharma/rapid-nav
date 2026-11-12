@@ -16,6 +16,13 @@ natively instead (see [setup.md](setup.md)).
 
 The build happens in a Docker volume, so the repository's own `build/` and `install/` are not touched.
 
+## PyTorch in the image
+
+The image has PyTorch (CPU wheels) and torchvision in a virtual environment at `/opt/venv`. The environment is created
+with `--system-site-packages`, so ROS and the system numpy 1.x stay visible, and `/opt/venv/bin` is first on `PATH`.
+The RAFT weights are fetched at image build time, so runs need no network. `colcon build` and `colcon test` run with
+the system Python (`/usr/bin/python3`), where PyTorch is absent; the RAFT tests skip there.
+
 ## Limits
 
 The image renders sensors in software. Rates are lower than on a native machine, and there is no GUI.
