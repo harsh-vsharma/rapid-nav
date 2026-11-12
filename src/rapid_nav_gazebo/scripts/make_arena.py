@@ -70,9 +70,16 @@ def gaussian_grain(rng, sigma):
 
 
 def make_floor(seed):
-    """Return speckled warm-grey concrete: large-scale variation, fine speckle and a few stains."""
+    """
+    Return warm-grey concrete with detail at every scale the camera sees.
+
+    Large-scale variation and stains, a mid-scale aggregate pattern (about 5 to 10 cm on a 2 m
+    tile) that stays visible a few metres away, and fine speckle for close range.
+    """
     rng = np.random.default_rng(seed)
     large = value_noise(rng, grid=4, octaves=3) - 0.5
+    aggregate = value_noise(rng, grid=24, octaves=2) - 0.5
+    pebbles = value_noise(rng, grid=64, octaves=1) - 0.5
     speckle = gaussian_grain(rng, 10.0)
     yy, xx = np.mgrid[0:SIZE, 0:SIZE]
     stains = np.zeros((SIZE, SIZE), dtype=np.float64)
@@ -80,7 +87,7 @@ def make_floor(seed):
         centre_x, centre_y = rng.uniform(0, SIZE, size=2)
         radius = rng.uniform(40, 110)
         stains += np.exp(-((xx - centre_x) ** 2 + (yy - centre_y) ** 2) / (2 * radius ** 2))
-    shade = 18 * large + speckle - 16 * np.clip(stains, 0, 1)
+    shade = 18 * large + 70 * aggregate + 40 * pebbles + speckle - 16 * np.clip(stains, 0, 1)
     base = np.array([150.0, 145.0, 138.0])
     return base + shade[..., np.newaxis]
 
