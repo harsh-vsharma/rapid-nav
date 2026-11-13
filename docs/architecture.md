@@ -45,3 +45,16 @@ odom → base_footprint → base_link → { camera_link → camera_optical_frame
 
 `odom → base_footprint` comes from one publisher only: the robot_localization EKF by default, or the simulator's
 differential-drive transform with `odom_tf:=wheel`. The `map` frame is added with localisation in S5.
+
+## Navigation
+
+The global side is built in S5 (details in [navigation.md](navigation.md)):
+
+- **Map.** Two occupancy maps (the arena and a maze) are generated from the arena's geometry and a fixed maze and
+  served by `map_server`.
+- **Localisation.** AMCL, on the laser scan, publishes `map → odom`; `odom → base_footprint` is unchanged.
+- **Global costmap.** The static map, inflated by the robot radius (0.25 m) out to 0.55 m.
+- **Planner server.** Nav2's planner server with seven planners selected by `planner_id`: our four (A*, A* with
+  smoothing, Dijkstra and Theta*, one plugin, `rapid_nav_planner/GridPlanner`) and three from Nav2 for comparison.
+
+The local side (the costmap around the robot and the velocity commands, with the hazard layer of S6) is not built yet.

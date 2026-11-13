@@ -20,6 +20,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-ament-cmake-xmllint \
         ros-jazzy-ament-flake8 \
         ros-jazzy-ament-pep257 \
+        ros-jazzy-ament-cmake-gtest \
+        ros-jazzy-ament-cmake-cpplint \
+        ros-jazzy-ament-cmake-lint-cmake \
+        ros-jazzy-nav2-core \
+        ros-jazzy-nav2-util \
+        ros-jazzy-nav2-msgs \
+        ros-jazzy-nav2-costmap-2d \
+        ros-jazzy-nav2-planner \
+        ros-jazzy-nav2-map-server \
+        ros-jazzy-nav2-amcl \
+        ros-jazzy-nav2-lifecycle-manager \
+        ros-jazzy-nav2-navfn-planner \
+        ros-jazzy-nav2-smac-planner \
+        ros-jazzy-nav2-theta-star-planner \
+        ros-jazzy-nav2-rviz-plugins \
         liburdfdom-tools \
         python3-numpy \
         python3-pil \

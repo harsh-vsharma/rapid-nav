@@ -7,8 +7,13 @@ import pytest
 
 from rapid_nav_tools.checks import (
     angle_diff,
+    clearances,
     colourise_depth,
     expected_fx,
+    heading_change_per_metre,
+    max_step,
+    occupied_cells_xy,
+    path_length,
     planar_delta,
     quaternion_from_rpy,
     rate_verdict,
@@ -126,3 +131,63 @@ def test_planar_delta_distance_and_wrapped_yaw():
     assert yaw_change == pytest.approx(0.0831853, abs=1e-6)
     distance, _ = planar_delta((1.0, 1.0, 0.0), (4.0, 5.0, 0.0))
     assert distance == pytest.approx(5.0)
+
+
+def test_path_length_of_an_l_shape():
+    """A path of 3 m east then 4 m north is 7 m long; fewer than two points have no length."""
+    assert path_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
+    assert path_length([(1.0, 1.0)]) == 0.0
+    assert path_length([]) == 0.0
+
+
+def test_max_step_is_the_longest_gap():
+    """The longest gap of a path with a diagonal 5 m step is 5 m."""
+    assert max_step([(0.0, 0.0), (1.0, 0.0), (4.0, 4.0)]) == pytest.approx(5.0)
+    assert max_step([(0.0, 0.0)]) == 0.0
+
+
+def test_heading_change_of_two_right_turns_is_sixty_degrees_per_metre():
+    """Two 90 degree turns over 3 m of path are 180 degrees in total: 60 degrees per metre."""
+    corner = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    assert heading_change_per_metre(corner) == pytest.approx(60.0)
+
+
+def test_heading_change_of_a_straight_line_is_zero():
+    """Collinear points turn by nothing, and repeated points are ignored."""
+    assert heading_change_per_metre([(0.0, 0.0), (1.0, 1.0), (1.0, 1.0), (2.0, 2.0)]) == 0.0
+    assert heading_change_per_metre([(0.0, 0.0)]) == 0.0
+
+
+def test_heading_change_wraps_a_turn_past_pi():
+    """A turn from heading 170 to heading -170 degrees is 20 degrees, not 340."""
+    a = math.radians(170.0)
+    b = math.radians(-170.0)
+    points = [(0.0, 0.0), (math.cos(a), math.sin(a)), (math.cos(a) + math.cos(b),
+                                                       math.sin(a) + math.sin(b))]
+    assert heading_change_per_metre(points) == pytest.approx(20.0 / 2.0, abs=1e-6)
+
+
+def test_clearances_match_a_brute_force_search():
+    """Chunked clearances equal the brute-force distance to the nearest occupied centre."""
+    rng = np.random.default_rng(3)
+    points = rng.uniform(-2.0, 2.0, size=(300, 2))
+    occupied = rng.uniform(-2.0, 2.0, size=(40, 2))
+    expected = np.array([np.min(np.hypot(*(occupied - p).T)) for p in points])
+    assert clearances(points, occupied, chunk=64) == pytest.approx(expected)
+
+
+def test_clearances_are_infinite_without_obstacles():
+    """With no occupied cell the clearance of every point is infinite."""
+    result = clearances([(0.0, 0.0), (1.0, 1.0)], np.zeros((0, 2)))
+    assert np.all(np.isinf(result))
+
+
+def test_occupied_cells_xy_places_cell_centres_in_metres():
+    """Row 0 is the map's bottom row: row 1, column 2 has its centre at (0.125, 0.075)."""
+    grid = np.zeros((3, 4), dtype=np.int8)
+    grid[1, 2] = 100
+    grid[0, 0] = -1
+    centres = occupied_cells_xy(grid, 0.05, (0.0, 0.0))
+    assert centres.shape == (1, 2)
+    assert centres[0] == pytest.approx([0.125, 0.075])
+    assert occupied_cells_xy(np.zeros((2, 2)), 0.05, (0.0, 0.0)).shape == (0, 2)

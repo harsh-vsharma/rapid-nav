@@ -1,0 +1,5 @@
+<library path="rapid_nav_planner">
+  <class type="rapid_nav_planner::GridPlanner" base_class_type="nav2_core::GlobalPlanner">
+    <description>Grid search planner (Dijkstra, A* or Theta*) on the global costmap, cost-aware, with optional smoothing.</description>
+  </class>
+</library>
