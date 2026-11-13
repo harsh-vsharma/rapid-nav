@@ -137,6 +137,7 @@ class PlannerCheck(Node):
             parameter_overrides=[Parameter('use_sim_time', Parameter.Type.BOOL, sim)],
         )
         self.map_msg = None
+        self.costmap_msg = None
         self.stats = {}
         self.amcl = []
         self.truth = []
@@ -144,6 +145,8 @@ class PlannerCheck(Node):
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(OccupancyGrid, '/map', self._on_map, latched)
+        self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self._on_costmap,
+                                 latched)
         for planner_id in OUR_PLANNERS:
             self.create_subscription(String, '/' + planner_id + '/stats',
                                      self._stats_recorder(planner_id), 10)
@@ -156,6 +159,24 @@ class PlannerCheck(Node):
     def _on_map(self, message):
         """Keep the latest map."""
         self.map_msg = message
+
+    def _on_costmap(self, message):
+        """Keep the latest global costmap."""
+        self.costmap_msg = message
+
+    def costmap_has_map(self):
+        """
+        Return True once the global costmap marks the map's obstacles.
+
+        The planner server's costmap takes the map a moment after /map is published; a query sent
+        before that plans over free space. Lethal cells are 100 in the published costmap; at least
+        as many as the map's occupied cells must be marked (inflation only adds to them).
+        """
+        if self.map_msg is None or self.costmap_msg is None:
+            return False
+        occupied = int(np.count_nonzero(np.asarray(self.map_msg.data, dtype=np.int16) >= 65))
+        lethal = int(np.count_nonzero(np.asarray(self.costmap_msg.data, dtype=np.int16) >= 99))
+        return occupied > 0 and lethal >= occupied
 
     def _stats_recorder(self, planner_id):
         """Return the callback that keeps the latest JSON statistics of one of our planners."""
@@ -392,10 +413,22 @@ def evaluate(rows, planner_ids, profile):
         infeasible = [r for r in mine if r['expect'] != 'success']
         right = sum(1 for r in infeasible
                     if not r['ok'] and r['error_code'] == EXPECTED_CODES[r['expect']])
-        report.add('{}: infeasible queries fail with the right error'.format(planner_id),
-                   '{}/{}'.format(right, len(infeasible)), 'all',
-                   verdict_of(right == len(infeasible) and infeasible))
-        clear = [r['min_clearance_m'] for r in mine if r['ok']]
+        if planner_id in OUR_PLANNERS:
+            report.add('{}: infeasible queries fail with the right error'.format(planner_id),
+                       '{}/{}'.format(right, len(infeasible)), 'all',
+                       verdict_of(right == len(infeasible) and infeasible))
+        else:
+            # Nav2's own planners: their answers to impossible goals are a finding, not a failure.
+            answers = ', '.join('{}: {}'.format(r['query'], 'path returned' if r['ok']
+                                                else r['error_name']) for r in infeasible)
+            report.add('{}: answers to infeasible queries'.format(planner_id),
+                       answers or '-', 'reported only', 'INFO')
+            into = [r for r in infeasible if r['ok']]
+            if into:
+                report.add('{}: returns a path into an obstacle'.format(planner_id),
+                           '{} of {} infeasible queries'.format(len(into), len(infeasible)),
+                           'reported only', 'INFO')
+        clear = [r['min_clearance_m'] for r in mine_feasible if r['ok']]
         worst = min(clear) if clear else None
         report.add('{}: minimum clearance of every path'.format(planner_id),
                    format_number(worst, 3) + ' m' if worst is not None else '-',
@@ -563,6 +596,11 @@ def run_checks(node, args, report, values):
     report.add('/map is the {} map'.format(args.map),
                '{} x {} cells at {:.2f} m'.format(info.width, info.height, info.resolution),
                'origin ({:.2f}, {:.2f}) m'.format(origin[0], origin[1]), verdict_of(same))
+    loaded = node.wait_until(node.costmap_has_map, MAP_WAIT_S)
+    report.add('global costmap holds the map', 'yes' if loaded else 'no',
+               'within {:.0f} s'.format(MAP_WAIT_S), verdict_of(loaded))
+    if not loaded:
+        return None, None, None
     if args.mode == 'sim':
         if not node.wait_until(lambda: node.now() > 0.0, CLOCK_WAIT_S):
             report.add('/clock', 'none', 'messages within 120 s', 'FAIL')
