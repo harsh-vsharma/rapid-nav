@@ -7,6 +7,10 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
+  # GCC on ARM notes an ABI change for std::pair arguments in C++17; it is not about this code.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+    add_compile_options(-Wno-psabi)
+  endif()
 endif()
 
 find_package(ament_cmake REQUIRED)

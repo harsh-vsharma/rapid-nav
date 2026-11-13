@@ -201,7 +201,12 @@ SearchResult search(
       if (!use_heuristic) {
         return 0.0;
       }
-      return params.heuristic_weight * octile_distance(x, y, goal.first, goal.second);
+      // Theta* moves at any angle, so only the straight-line distance never overestimates its
+      // remaining cost; A* moves on the 8-connected grid, where the octile distance is exact.
+      const double distance = params.algorithm == Algorithm::kThetaStar ?
+        std::hypot(static_cast<double>(x - goal.first), static_cast<double>(y - goal.second)) :
+        octile_distance(x, y, goal.first, goal.second);
+      return params.heuristic_weight * distance;
     };
 
   using Entry = std::pair<double, int>;
