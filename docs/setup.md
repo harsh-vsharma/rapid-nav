@@ -14,7 +14,7 @@ sudo apt install ros-jazzy-desktop ros-jazzy-ros-gz python3-colcon-common-extens
 
 ```bash
 mkdir -p ~/ros_ws && cd ~/ros_ws
-git clone https://github.com/code-master-harsh/rapid-nav.git
+git clone https://github.com/harsh-vsharma/rapid-nav.git
 cd rapid-nav
 sudo rosdep init   # only once per machine; skip if it says it is already initialised
 rosdep update
