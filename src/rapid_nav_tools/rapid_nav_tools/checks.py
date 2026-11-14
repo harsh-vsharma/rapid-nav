@@ -181,3 +181,79 @@ def occupied_cells_xy(grid, resolution, origin):
     if rows.size == 0:
         return np.zeros((0, 2))
     return np.column_stack([x, y])
+
+
+def body_clearance(xy, occupied_xy, extra_boxes, radius, cell=0.05, chunk=128):
+    """
+    Return, per robot centre, the distance in metres from the robot's circle to an obstacle.
+
+    A negative value is an overlap. Each occupied map cell is a square of side `cell` centred on
+    its centre (occupied_xy). Each extra box is (x, y, half_side) for a square of side
+    2 * half_side. The distance from a centre to a square is zero inside it. With no obstacle at
+    all the clearance is infinite.
+    """
+    centres = _polyline(xy)
+    cells = _polyline(occupied_xy)
+    boxes = np.asarray(extra_boxes, dtype=np.float64).reshape(-1, 3)
+    squares = np.vstack([
+        np.column_stack([cells, np.full(cells.shape[0], cell / 2.0)]),
+        boxes,
+    ])
+    result = np.full(centres.shape[0], np.inf)
+    if squares.shape[0] == 0:
+        return result
+    for start in range(0, centres.shape[0], chunk):
+        block = centres[start:start + chunk]
+        half = squares[None, :, 2]
+        dx = np.maximum(np.abs(block[:, None, 0] - squares[None, :, 0]) - half, 0.0)
+        dy = np.maximum(np.abs(block[:, None, 1] - squares[None, :, 1]) - half, 0.0)
+        nearest = np.hypot(dx, dy).min(axis=1)
+        result[start:start + chunk] = nearest - radius
+    return result
+
+
+def collision_episodes(clearances, threshold=0.0):
+    """Return how many times the clearance falls below the threshold: entries, not samples."""
+    values = np.asarray(clearances, dtype=np.float64).ravel()
+    below = values < threshold
+    entered = below & ~np.concatenate(([False], below[:-1]))
+    return int(entered.sum())
+
+
+def tracking_error(xy, path_xy):
+    """Return the mean distance in metres from each point to the nearest point of the path."""
+    points = _polyline(xy)
+    path = _polyline(path_xy)
+    if points.shape[0] == 0 or path.shape[0] == 0:
+        return float('nan')
+    return float(np.mean(clearances(points, path)))
+
+
+def tracking_error_in_force(xy, times, plan_times, plans):
+    """
+    Return the mean distance, in metres, from each point to the plan in force at its time.
+
+    A plan is in force from the moment it is published until the next one (plan_times, sorted).
+    A point before the first plan is skipped, and so is a plan with no point; with nothing left to
+    compare the error is not a number.
+    """
+    points = _polyline(xy)
+    when = np.asarray(times, dtype=np.float64).ravel()
+    starts = np.asarray(plan_times, dtype=np.float64).ravel()
+    distances = []
+    for point, moment in zip(points, when):
+        index = int(np.searchsorted(starts, moment, side='right')) - 1
+        if index < 0:
+            continue
+        path = _polyline(plans[index])
+        if path.shape[0] == 0:
+            continue
+        distances.append(float(clearances(point[None, :], path)[0]))
+    if not distances:
+        return float('nan')
+    return float(np.mean(distances))
+
+
+def travelled_length(xy):
+    """Return the length in metres of the path the robot drove through its positions."""
+    return path_length(xy)

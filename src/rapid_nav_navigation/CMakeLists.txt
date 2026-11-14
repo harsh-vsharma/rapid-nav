@@ -3,7 +3,7 @@ project(rapid_nav_navigation)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY maps config launch rviz
+install(DIRECTORY maps config launch rviz behavior_trees
   DESTINATION share/${PROJECT_NAME}
 )
 

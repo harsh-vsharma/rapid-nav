@@ -7,7 +7,9 @@ import pytest
 
 from rapid_nav_tools.checks import (
     angle_diff,
+    body_clearance,
     clearances,
+    collision_episodes,
     colourise_depth,
     expected_fx,
     heading_change_per_metre,
@@ -18,6 +20,9 @@ from rapid_nav_tools.checks import (
     quaternion_from_rpy,
     rate_verdict,
     scan_image,
+    tracking_error,
+    tracking_error_in_force,
+    travelled_length,
     yaw_from_quaternion,
 )
 
@@ -191,3 +196,63 @@ def test_occupied_cells_xy_places_cell_centres_in_metres():
     assert centres.shape == (1, 2)
     assert centres[0] == pytest.approx([0.125, 0.075])
     assert occupied_cells_xy(np.zeros((2, 2)), 0.05, (0.0, 0.0)).shape == (0, 2)
+
+
+def test_body_clearance_of_a_cell_and_an_overlap():
+    """
+    Check the clearance to a cell, and an overlap, of a robot of radius 0.25 by hand.
+
+    A cell of side 0.1 at (1, 0): the centre at the origin is 0.95 m from the cell's near edge, a
+    clearance of 0.70 m; at x = 0.8 the centre is 0.15 m from the edge, an overlap of -0.10 m.
+    """
+    cells = np.array([[1.0, 0.0]])
+    result = body_clearance([(0.0, 0.0), (0.8, 0.0)], cells, np.zeros((0, 3)), 0.25, cell=0.1)
+    assert result == pytest.approx([0.70, -0.10])
+
+
+def test_body_clearance_counts_extra_boxes_and_is_infinite_without_obstacles():
+    """A box of half side 0.25 at (-2, 1) is 0.75 m from (-2, 0): a clearance of 0.5 m."""
+    result = body_clearance([(-2.0, 0.0)], np.zeros((0, 2)), [(-2.0, 1.0, 0.25)], 0.25)
+    assert result == pytest.approx([0.5])
+    empty = body_clearance([(0.0, 0.0)], np.zeros((0, 2)), np.zeros((0, 3)), 0.25)
+    assert np.all(np.isinf(empty))
+
+
+def test_collision_episodes_count_entries_not_samples():
+    """Two entries below zero in the first list; a start below zero is one entry."""
+    assert collision_episodes([1.0, -0.1, -0.2, 0.5, -0.3]) == 2
+    assert collision_episodes([-1.0, -2.0]) == 1
+    assert collision_episodes([0.2, 0.1]) == 0
+
+
+def test_tracking_error_is_the_mean_distance_to_the_nearest_path_point():
+    """
+    Check the tracking error to the nearest path point by hand.
+
+    The path has points at x = 0, 0.5 and 1. The point (0.5, 0.2) is 0.2 m from (0.5, 0); the point
+    (1.0, 0.5) is 0.5 m from (1, 0): a mean of 0.35 m. With no path the error is not a number.
+    """
+    path = [(0.0, 0.0), (0.5, 0.0), (1.0, 0.0)]
+    assert tracking_error([(0.5, 0.2), (1.0, 0.5)], path) == pytest.approx(0.35)
+    assert math.isnan(tracking_error([(0.5, 0.2)], []))
+
+
+def test_tracking_error_in_force_uses_the_plan_published_last_before_each_point():
+    """
+    Check the tracking error to the plan in force, with two plans.
+
+    One plan lies along y = 0 from t = 0, the other along y = 1 from t = 1. The point (0.5, 0.2) at
+    t = 0.5 is 0.2 m from the first; the point (0.5, 1.3) at t = 1.5 is 0.3 m from the second: a
+    mean of 0.25 m. The point at t = -1, before any plan, is skipped.
+    """
+    plans = [[(0.0, 0.0), (0.5, 0.0), (1.0, 0.0)], [(0.0, 1.0), (0.5, 1.0), (1.0, 1.0)]]
+    points = [(0.5, 0.2), (0.5, 1.3), (0.5, 5.0)]
+    times = [0.5, 1.5, -1.0]
+    result = tracking_error_in_force(points, times, [0.0, 1.0], plans)
+    assert result == pytest.approx(0.25)
+    assert math.isnan(tracking_error_in_force(points, times, [], []))
+
+
+def test_travelled_length_follows_the_positions():
+    """Three metres east then four north is seven metres of travel."""
+    assert travelled_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
