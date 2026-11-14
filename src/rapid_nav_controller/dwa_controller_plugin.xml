@@ -1,0 +1,5 @@
+<library path="rapid_nav_dwa_controller">
+  <class type="rapid_nav_controller::DwaController" base_class_type="nav2_core::Controller">
+    <description>Dynamic window approach with our own critics, for the Nav2 controller server.</description>
+  </class>
+</library>

@@ -14,6 +14,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(nav2_core REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
+find_package(nav2_util REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # The dynamic window library has no ROS dependency; the controller plugin is built on top of it.
 add_library(rapid_nav_dwa_core SHARED src/dwa_core.cpp)
@@ -21,15 +33,27 @@ target_include_directories(rapid_nav_dwa_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
-install(TARGETS rapid_nav_dwa_core
+add_library(rapid_nav_dwa_controller SHARED src/dwa_controller.cpp)
+target_include_directories(rapid_nav_dwa_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(rapid_nav_dwa_controller rapid_nav_dwa_core)
+ament_target_dependencies(rapid_nav_dwa_controller
+  rclcpp rclcpp_lifecycle nav2_core nav2_costmap_2d nav2_util pluginlib nav_msgs
+  geometry_msgs visualization_msgs tf2 tf2_ros tf2_geometry_msgs)
+
+install(TARGETS rapid_nav_dwa_core rapid_nav_dwa_controller
   EXPORT export_${PROJECT_NAME}
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin)
 install(DIRECTORY include/ DESTINATION include)
+pluginlib_export_plugin_description_file(nav2_core dwa_controller_plugin.xml)
 ament_export_include_directories(include)
-ament_export_libraries(rapid_nav_dwa_core)
+ament_export_libraries(rapid_nav_dwa_core rapid_nav_dwa_controller)
 ament_export_targets(export_${PROJECT_NAME})
+ament_export_dependencies(rclcpp rclcpp_lifecycle nav2_core nav2_costmap_2d nav2_util pluginlib
+  nav_msgs geometry_msgs visualization_msgs tf2 tf2_ros tf2_geometry_msgs)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
