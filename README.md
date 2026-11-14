@@ -2,7 +2,7 @@
 
 *Reliability-Aware Perception for Intelligent Dynamic Navigation*
 
-[![ci](https://github.com/code-master-harsh/rapid-nav/actions/workflows/ci.yml/badge.svg)](https://github.com/code-master-harsh/rapid-nav/actions/workflows/ci.yml)
+[![ci](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml/badge.svg)](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml)
 
 A differential-drive mobile robot in Gazebo that uses optical flow to see which things move. Fast flow (FlowNetS) is
 used by default, and accurate flow (RAFT) is used when a reliability check fails. The robot's own motion is removed
@@ -69,7 +69,7 @@ The full steps are in [docs/setup.md](docs/setup.md).
 
 ```bash
 mkdir -p ~/ros_ws && cd ~/ros_ws
-git clone https://github.com/code-master-harsh/rapid-nav.git
+git clone https://github.com/harsh-vsharma/rapid-nav.git
 cd rapid-nav
 sudo rosdep init   # only once per machine; skip if it says it is already initialised
 rosdep update
