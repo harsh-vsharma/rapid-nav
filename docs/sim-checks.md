@@ -164,3 +164,63 @@ This writes a `planner_check_maze_<time>/` folder. Stop the launch with Ctrl+C w
 **What to send back** for this part: `rviz-map.png` and `rviz-paths.png`; the two `planner_check_*` folders from steps d and
 e; the terminal output of both checks; and any error printed by the launch. The meaning of the checks, and the
 numbers they should give, are in [navigation.md](navigation.md).
+
+## 11. Navigation (S6)
+
+This part drives the robot to goals with the navigation stack: the Nav2 controller and behaviour servers, our DWA
+controller, and the goal runs scored on the simulator's ground truth. It needs a native ROS 2 Jazzy install (or the
+Docker image). Build as in step 1, and `source install/setup.bash` in every terminal. Stop any earlier simulation first.
+
+**a. Start the navigation stack.** The default controller is ours (`dwa`); the other two are `dwb` and `rpp`:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+```
+
+RViz opens with the navigation layout (map, particle cloud, the global costmap, scan, the planned paths, and `/plan` in
+cyan and `/local_plan` in green). Wait about 20 seconds for AMCL to settle: the particle cloud collapses onto the robot. In a
+second terminal, `ros2 lifecycle get /bt_navigator` should print `active`.
+
+**b. Three goals in RViz.** Use the "2D Goal Pose" tool to click three goals in open floor, one at a time, and let each
+one finish before the next. The robot should drive to each goal without hitting a crate or a wall. While it drives,
+`/plan` (the global path) and `/local_plan` (the chosen trajectory) should be visible. Save a screenshot in the middle
+of a run, with both paths, as `rviz-nav.png`.
+
+**c. The goal runs.** Keep RViz open, but send no goals while a run goes: the robot drives by itself. In a second
+terminal:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa
+```
+
+It writes a `nav_run_tour_dwa_<time>/` folder with `summary.md`, `results.json`, `environment.txt` and
+`trajectories_tour.png`, and it prints the same table. The run takes several minutes. Then stop the launch (Ctrl+C),
+start it again with the other controllers, and run each one the same way:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwb
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwb
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=rpp
+ros2 run rapid_nav_tools nav_run --scenario tour --controller rpp
+```
+
+Last, the `unmapped` scenario (two boxes that are not in the map) with our controller. Restart the launch first, because
+the boxes stay in the world:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwa
+ros2 run rapid_nav_tools nav_run --scenario unmapped --controller dwa
+```
+
+The exit status of `nav_run` is 0 when every check of `dwa` passes (every goal reached by the ground truth, no
+collision, a body clearance of at least 0.05 m). The `dwb` and `rpp` rows are information only.
+
+**d. What to watch.** The robot's motion should be smooth, not hesitant or oscillating. Note any goal that Nav2 reports
+as failed or canceled although the ground-truth row says success, and any "Failed to make progress" or "Timed out"
+message in the launch terminal.
+
+**What to send back** for this part: `rviz-nav.png`; the five bundles (`tour` with the three controllers, `unmapped` with
+`dwa`), each with its `summary.md`, `results.json`, `trajectories_*.png` and `environment.txt`, and the terminal output of
+each launch; a sentence on the robot's
+motion (smooth, hesitant, oscillating) for each controller; and any error printed. The meaning of the checks and the
+numbers they should give are in [navigation.md](navigation.md).

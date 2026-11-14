@@ -57,4 +57,16 @@ The global side is built in S5 (details in [navigation.md](navigation.md)):
 - **Planner server.** Nav2's planner server with seven planners selected by `planner_id`: our four (A*, A* with
   smoothing, Dijkstra and Theta*, one plugin, `rapid_nav_planner/GridPlanner`) and three from Nav2 for comparison.
 
-The local side (the costmap around the robot and the velocity commands, with the hazard layer of S6) is not built yet.
+The local side (S6, details in [navigation.md](navigation.md)):
+
+- **Local costmap.** Rolling, 4 × 4 m in `odom`, from the lidar, with the inflation layer.
+- **Controller server.** One controller under the id `FollowPath`, chosen at launch: our dynamic window approach
+  (`rapid_nav_controller::DwaController`, the library `dwa_core` has no ROS dependency), Nav2's DWB, or Regulated Pure
+  Pursuit. The velocity commands go to `/cmd_vel` as `Twist`, the message the simulation's bridge takes.
+- **Behaviour server.** Spin, back up, drive on heading and wait, used by the recovery branch of the tree.
+- **BT navigator.** `navigate_rapid.xml` (a copy of Nav2's tree, with our planner as the default) runs each goal:
+  replanning once a second, following the path, and recovering.
+- **Goal runs.** `nav_run` sends the scenario's goals and scores them on the simulator's ground truth, not on the wheel
+  odometry.
+
+The hazard layer (velocity-aware cells from the flow) arrives in S7.

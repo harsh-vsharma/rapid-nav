@@ -12,8 +12,9 @@ A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT
 
 ## Status
 
-The robot, the simulation and the global planning (localisation on the map, the planner server with our planners) are in
-testing; perception is paused; the other parts are planned.
+The robot, the simulation, the global planning (localisation on the map, the planner server with our planners) and the
+local control (Nav2's controller and behaviour servers, with our dynamic window controller) are in testing; perception
+is paused; the other parts are planned.
 
 | Part | Stage | Status |
 |---|---|---|
@@ -22,9 +23,10 @@ testing; perception is paused; the other parts are planned.
 | Ego-motion compensation | S3 | planned |
 | Dynamic scenarios | S4 | planned |
 | Navigation baseline: global planning | S5 | in testing |
-| Hazard costmap | S6 | planned |
-| Adaptive flow | S7 | planned |
-| Experiments | S8 | planned |
+| Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
+| Hazard map to costmap | S7 | planned |
+| Adaptive flow | S8 | planned |
+| Experiments | S9 | planned |
 
 ## Pipeline
 
@@ -48,7 +50,8 @@ See [docs/architecture.md](docs/architecture.md) for the design.
 ## Repository layout
 
 - `src/`: ROS 2 packages: the robot description, the Gazebo arena and bridge, the launch files, the `sim_check` tool,
-  the maps and the navigation launch, our planner (`rapid_nav_planner`) and the planner checks (`planner_check`).
+  the maps and the navigation launch, our planner (`rapid_nav_planner`) and the planner checks (`planner_check`), our
+  controller (`rapid_nav_controller`), and the tools (`rapid_nav_tools`): the checks, the path viewer and `nav_run`.
 - `prototypes/`: reference code, not built.
 - `docs/`: setup, development and architecture notes.
 - `docker/`: optional build-and-test image for machines without a native ROS 2 install.
@@ -100,7 +103,21 @@ for each goal you click with "2D Goal Pose"):
 ros2 launch rapid_nav_bringup sim.launch.py planning:=true
 ```
 
-The maps, the planners and their checks are described in [docs/navigation.md](docs/navigation.md).
+Start the navigation stack (the planning stack, Nav2's controller, behaviour and BT navigator servers, and our DWA
+controller; `controller:=dwb` or `controller:=rpp` chooses the others). Click a goal with "2D Goal Pose" in RViz:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+```
+
+With the stack running, run a goal scenario and score it on the simulator's ground truth, in a second terminal:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa
+```
+
+The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
+steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 and 11).
 
 The robot is described in [docs/robot.md](docs/robot.md). The step-by-step check procedure for testers is in
 [docs/sim-checks.md](docs/sim-checks.md).
