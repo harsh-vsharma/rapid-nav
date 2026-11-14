@@ -46,3 +46,4 @@ rosbag2_*/
 # Local check bundles
 planner_check_*/
 perception_check_*/
+nav_run_*/

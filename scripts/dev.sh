@@ -28,6 +28,9 @@ usage: scripts/dev.sh <command>
                   planning stack + planner_check; offline (static localisation) on the map, or with
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
+  nav-smoke <tour|unmapped> <dwa|dwb|rpp>
+                  navigation stack in the simulation + nav_run (goal runs scored on ground truth);
+                  the bundle goes to nav_run_<scenario>_<controller>_<time>/
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -116,6 +119,32 @@ case "${1:-}" in
         # Start the planning stack in the background, run planner_check (it waits for the planner server
         # and the map), copy the launch log into the bundle, stop the stack and exit with planner_check's code.
         smoke_cmd="mkdir -p $bundle; $launch_cmd > /ws/planner_launch.log 2>&1 & launch_pid=\$!; $check_cmd; rc=\$?; kill -INT \$launch_pid 2>/dev/null; sleep 10; cp /ws/planner_launch.log $bundle/; exit \$rc"
+        in_container "$smoke_cmd"
+        ;;
+    nav-smoke)
+        shift
+        if [ "$#" -ne 2 ]; then
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped> <dwa|dwb|rpp>" >&2
+            exit 2
+        fi
+        scenario="$1"
+        controller="$2"
+        case "$scenario" in
+            tour|unmapped) ;;
+            *) echo "nav-smoke: unknown scenario $scenario" >&2; exit 2 ;;
+        esac
+        case "$controller" in
+            dwa|dwb|rpp) ;;
+            *) echo "nav-smoke: unknown controller $controller" >&2; exit 2 ;;
+        esac
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        bundle="/repo/nav_run_${scenario}_${controller}_$stamp"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller"
+        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --profile docker --out $bundle"
+        # Start the navigation stack in the background, run nav_run (it waits for the clock and the
+        # navigation action server), copy the launch log into the bundle, stop the stack and exit
+        # with nav_run's code.
+        smoke_cmd="mkdir -p $bundle; $launch_cmd > /ws/nav_launch.log 2>&1 & launch_pid=\$!; $check_cmd; rc=\$?; kill -INT \$launch_pid 2>/dev/null; sleep 10; cp /ws/nav_launch.log $bundle/; exit \$rc"
         in_container "$smoke_cmd"
         ;;
     shell)

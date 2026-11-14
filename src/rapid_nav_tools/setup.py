@@ -22,6 +22,7 @@ setup(
             'sim_check = rapid_nav_tools.sim_check:main',
             'planner_check = rapid_nav_tools.planner_check:main',
             'path_viewer = rapid_nav_tools.path_viewer:main',
+            'nav_run = rapid_nav_tools.nav_run:main',
         ],
     },
 )
