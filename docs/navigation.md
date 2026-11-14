@@ -315,22 +315,21 @@ are indicative only. Both scenarios are described above; the `dwa` runs are the 
 
 | scenario | controller | goals reached (truth) | goals reached (Nav2) | collisions | min clearance (m) | mean time, goals reached by truth (s) | mean tracking (m) | recoveries | odometry drift, last goal (m) | disagreements |
 |---|---|---|---|---|---|---|---|---|---|---|
-| tour | dwa | 6/6 | 6/6 | 0 | 0.185 | 9.9 | 0.037 | 0 | 0.056 | 0 |
-| tour | dwa (repeat) | 5/6 | 5/6 | 0 | 0.209 | 9.7 | 0.039 | 0 | 0.126 | 0 |
-| tour | dwb | 5/6 | 1/6 | 0 | 0.182 | 107.0 | 0.036 | 63 | 0.129 | 4 |
+| tour | dwa | 6/6 | 6/6 | 0 | 0.197 | 9.9 | 0.044 | 0 | 0.101 | 0 |
+| tour | dwa (repeat) | 6/6 | 6/6 | 0 | 0.200 | 9.8 | 0.038 | 0 | 0.052 | 0 |
+| tour | dwb | 6/6 | 6/6 | 0 | 0.220 | 10.5 | 0.040 | 0 | 0.120 | 0 |
 | tour | rpp | 6/6 | 6/6 | 0 | 0.204 | 11.2 | 0.037 | 0 | 0.031 | 0 |
 | unmapped | dwa | 3/3 | 3/3 | 0 | 0.146 | 13.1 | 0.038 | 0 | 0.053 | 0 |
-| unmapped | dwb | 1/3 | 0/3 | 0 | 0.061 | 120.0 | 0.038 | 24 | 0.258 | 1 |
+| unmapped | dwb | 3/3 | 3/3 | 0 | 0.057 | 13.9 | 0.057 | 0 | 0.341 | 0 |
 | unmapped | rpp | 3/3 | 3/3 | 0 | 0.197 | 14.8 | 0.031 | 0 | 0.080 | 0 |
 
-The repeat of the tour with `dwa` ended goal 5 on an action timeout, not in the controller: the BT navigator's wait for
-the planner server to acknowledge `ComputePathToPose` ran out while the virtual machine was CPU-bound (the control loop
-also missed its 20 Hz rate), and the goal was aborted 1.1 m short. The same timeout appears once in the `dwb` unmapped
-run. The default `default_server_timeout` of Nav2 is short for a loaded machine; the stack keeps it unchanged, and the
-tester's native runs show whether it matters there.
+Two settings matter for these numbers. DWB's own `xy_goal_tolerance` must not exceed the goal checker's (0.15 m): with
+a larger value DWB stops to turn towards the goal's yaw before the goal checker accepts the position, and the robot
+halts short of the goal until the progress checker gives up. And the BT navigator's `default_server_timeout` is 200 ms,
+not Nav2's 20 ms: on a loaded machine the planner server can take longer than 20 ms to acknowledge `ComputePathToPose`,
+and a missed acknowledgement leaves no error code, so the tree aborts the goal without trying a recovery. The `rpp`
+rows and the `unmapped` `dwa` row were measured before the timeout was raised; no goal in them hit it.
 
-The dwb runs spend their time in recoveries: the controller reports "Failed to make progress" near the goal, and the
-robot stops 0.18 to 0.30 m short of the target while Nav2 cancels the goal. Those are the disagreements the table counts:
-the robot is within the truth tolerance, and Nav2's own checks are not.
+DWB passes closest to the unmapped box on the first goal (0.057 m); our DWA keeps 0.146 m and RPP 0.197 m there.
 
 The peak memory of the development container in one `tour` run with `dwa` was 741 MiB (`docker stats` every 6 s).
