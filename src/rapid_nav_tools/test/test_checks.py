@@ -239,7 +239,9 @@ def test_tracking_error_is_the_mean_distance_to_the_nearest_path_point():
 
 def test_tracking_error_in_force_uses_the_plan_published_last_before_each_point():
     """
-    Two plans: one along y = 0 from t = 0, one along y = 1 from t = 1. The point (0.5, 0.2) at
+    Check the tracking error to the plan in force, with two plans.
+
+    One plan lies along y = 0 from t = 0, the other along y = 1 from t = 1. The point (0.5, 0.2) at
     t = 0.5 is 0.2 m from the first; the point (0.5, 1.3) at t = 1.5 is 0.3 m from the second: a
     mean of 0.25 m. The point at t = -1, before any plan, is skipped.
     """
