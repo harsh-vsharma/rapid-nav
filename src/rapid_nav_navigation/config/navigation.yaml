@@ -225,7 +225,9 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.25
+      # The same as the goal checker: a larger value makes DWB stop and turn before the goal
+      # checker accepts the position, so the robot halts short of the goal.
+      xy_goal_tolerance: 0.15
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: true
       stateful: true
@@ -296,7 +298,9 @@ bt_navigator:
     robot_base_frame: base_footprint
     odom_topic: /odometry/filtered
     bt_loop_duration: 10
-    default_server_timeout: 20
+    # Milliseconds for an action server to acknowledge a goal. Nav2's 20 ms is short for a loaded
+    # machine, and a missed acknowledgement aborts the goal without a recovery.
+    default_server_timeout: 200
     wait_for_service_timeout: 1000
     navigators: ["navigate_to_pose"]
     navigate_to_pose:
