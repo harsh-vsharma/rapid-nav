@@ -7,6 +7,7 @@ import numpy as np
 from rapid_nav_tools.checks import (
     dynamic_clearance,
     interpolate_track,
+    longest_stall,
     moving_speed,
     path_conformance,
 )
@@ -307,12 +308,17 @@ def validity_rows(scenario_name, scenario, tracks, robot_times, robot_xy, encoun
             at_robot = interpolate_track(robot_times, robot_xy, times)
             gap, _ = dynamic_clearance(at_robot, times, [track], radius)
             free = gap > CONTACT_M
+            gap_to_robot = gap
         else:
             free = np.ones(xy.shape[0], dtype=bool)
+            gap_to_robot = np.full(xy.shape[0], np.inf)
         deviation = path_conformance(xy[free], obstacle['path'], obstacle.get('mode', 'once')) \
             if free.any() else 0.0
         add('{} follows its path'.format(name), '{:.3f} m'.format(deviation),
             '<= {} m'.format(CONFORMANCE_M), deviation <= CONFORMANCE_M)
+        stall = longest_stall(times, xy, gap_to_robot, float(obstacle['speed']),
+                              obstacle['path'], obstacle.get('mode', 'once'))
+        add('{} never stalls'.format(name), '{:.1f} s'.format(stall), '<= 1.0 s', stall <= 1.0)
         speed = moving_speed(times, xy, mask=free)
         wanted = float(obstacle['speed'])
         add('{} speed'.format(name), '{:.3f} m/s'.format(speed),

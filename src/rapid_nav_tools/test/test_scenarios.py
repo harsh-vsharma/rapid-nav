@@ -246,11 +246,11 @@ def test_validity_rows_pass_for_a_scripted_run_and_fail_when_it_is_not():
     good = moving_track('walker_1', 'person', 0.0, 4.0, 2.0, 8.0)
     rows = validity_rows('crossing', scenario, {'walker_1': good}, [0.0, 8.0],
                          [[2.0, 0.0], [2.0, 0.0]], 1.2, 0.25)
-    assert [r['verdict'] for r in rows] == ['PASS'] * 4
+    assert [r['verdict'] for r in rows] == ['PASS'] * 5
     slow = moving_track('walker_1', 'person', 0.0, 2.0, 2.3, 8.0)
     rows = validity_rows('crossing', scenario, {'walker_1': slow}, [0.0, 8.0],
                          [[2.0, 0.0], [2.0, 0.0]], 2.0, 0.25)
-    assert [r['verdict'] for r in rows] == ['PASS', 'FAIL', 'FAIL', 'FAIL']
+    assert [r['verdict'] for r in rows] == ['PASS', 'FAIL', 'PASS', 'FAIL', 'FAIL']
 
 
 def test_sdf_is_heavy_and_hard_to_tip():

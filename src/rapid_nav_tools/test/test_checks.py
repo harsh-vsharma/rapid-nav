@@ -15,6 +15,7 @@ from rapid_nav_tools.checks import (
     expected_fx,
     heading_change_per_metre,
     interpolate_track,
+    longest_stall,
     max_step,
     moving_speed,
     occupied_cells_xy,
@@ -315,3 +316,39 @@ def test_moving_speed_skips_masked_steps():
     # The step 1 -> 2 (pushed, 0.2 m/s) touches a masked sample, so only 0.4 m/s steps count.
     assert moving_speed(times, xy, mask=[True, True, False, True]) == pytest.approx(0.4)
     assert moving_speed(times, xy) == pytest.approx(1.0 / 3.0)
+
+
+def straight_track(stuck_from, stuck_to, seconds=12.0, speed=0.5):
+    times = [k * 0.1 for k in range(int(seconds / 0.1) + 1)]
+    xy, x = [], 0.0
+    for t in times:
+        if not stuck_from <= t < stuck_to:
+            x += speed * 0.1
+        xy.append([x, 0.0])
+    return times, xy
+
+
+def test_longest_stall_finds_a_stuck_free_obstacle():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    gap = [5.0] * 121
+    times, xy = straight_track(4.0, 8.0)
+    # stuck for 4 s: the stalled windows start from about 3.6 s to 7.4 s and cover about 4.8 s
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == pytest.approx(4.8, abs=0.3)
+    times, xy = straight_track(99.0, 100.0)
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == 0.0
+
+
+def test_longest_stall_ignores_contact_start_vertices_and_the_end():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    times, xy = straight_track(4.0, 8.0)
+    # the robot is near the whole time: nothing counts
+    assert longest_stall(times, xy, [0.1] * 121, 0.5, path, 'once') == 0.0
+    # waiting at a vertex (a reversal) is not a stall
+    vertices = [{'x': 0.0, 'y': 0.0}, {'x': 3.0, 'y': 0.0}]
+    at_vertex = [[min(0.5 * 0.1 * k, 3.0), 0.0] for k in range(121)]
+    assert longest_stall(times, at_vertex, [5.0] * 121, 0.5, vertices, 'back_and_forth') == 0.0
+    # finished at the end of a 'once' path
+    short = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}]
+    times2, xy2 = straight_track(100.0, 101.0, seconds=10.0)
+    xy2 = [[min(p[0], 2.0), 0.0] for p in xy2]
+    assert longest_stall(times2, xy2, [5.0] * len(times2), 0.5, short, 'once') == 0.0
