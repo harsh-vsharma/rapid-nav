@@ -272,7 +272,7 @@ obstacles:
 |---|---|---|
 | `crossing` | staging (-3.5, 0), (3.5, 0), back to (0, 0) | a person crosses the robot's line from the south, starting when goal 2 is sent and the robot is within 2.2 m of (1.5, 0); it walks 0.5 m/s and stops at y = 0.8 |
 | `head_on` | staging (-3.5, 0), (3.5, 0) | a person walks the robot's own line the other way, from (4.2, 0) at 0.4 m/s, starting when goal 2 is sent |
-| `crowd` | (3.5, 0), (-4, 1), (0, 0) | two persons patrol back and forth (0.3 and 0.5 m/s) and a cart loops at 0.4 m/s; all move from the start |
+| `crowd` | (3.5, 0), (-4, 1), (0, 0) | two persons patrol back and forth (0.3 m/s along y = -0.9, 0.5 m/s along x = 0.8 above y = -0.3) and a cart loops at 0.4 m/s; all move from the start; no two paths meet |
 
 Run them with the launch `scenario:=` argument, which starts the obstacles; `nav_run` then waits for `/scenario/ready`
 and exits with status 2 and a message when there is no driver. Restart the launch before each run, because the
@@ -314,9 +314,9 @@ every row shown.
 | crossing | dwa (repeat) | 3/3 | 1 | -0.052 | 0.40 | 2 | 3 | 13.3 |
 | crossing | dwb | 3/3 | 1 | -0.052 | 0.40 | 2 | 1 | 13.9 |
 | crossing | rpp | 3/3 | 0 | 0.158 | 0.61 | 2 | 5 | 15.6 |
-| crowd | dwa | 3/3 | 0 | 0.091 | 0.54 | 2 | 0 | 12.7 |
-| crowd | dwb | 3/3 | 1 | -0.019 | 0.46 | 2 | 1 | 13.1 |
-| crowd | rpp | 3/3 | 3 | -0.058 | 0.39 | 5 | 11 | 18.8 |
+| crowd | dwa | 3/3 | 2 | -0.050 | 0.50 | 5 | 13 | 18.0 |
+| crowd | dwb | 3/3 | 1 | -0.055 | 0.40 | 3 | 3 | 14.2 |
+| crowd | rpp | 3/3 | 1 | -0.038 | 0.53 | 4 | 9 | 17.7 |
 | head_on | dwa | 2/2 | 1 | -0.051 | 0.40 | 1 | 6 | 16.9 |
 | head_on | dwa (repeat) | 2/2 | 0 | 0.077 | 0.53 | 1 | 0 | 17.1 |
 | head_on | dwb | 2/2 | 1 | -0.051 | 0.40 | 1 | 3 | 16.3 |
@@ -327,8 +327,9 @@ every row shown.
 - `head_on`: the walker walks into the robot's line and the robot sidesteps south of it. The closest approach is
   0.40 to 0.53 m, with a clearance around zero. Our DWA's two runs differ (one touch, then none, clearance 0.08 m); DWB
   and RPP each touch once (-0.05 m and -0.01 m).
-- `crowd`: our DWA reaches every goal without collision (0.09 m); DWB touches once (-0.02 m); RPP collides three times
-  (11 recoveries) while crossing the cart's loop on goal 2.
+- `crowd`: every controller reaches every goal and touches a moving obstacle at least once: our DWA twice (-0.05 m,
+  13 recoveries), DWB and RPP once each (-0.06 m and -0.04 m). The two persons' paths never meet each other, so every
+  contact involves the robot.
 - One run of a pass is not enough to rank controllers: the outcome depends on small differences in timing around a
   clearance of zero.
 
