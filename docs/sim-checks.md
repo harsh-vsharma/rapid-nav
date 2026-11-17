@@ -224,3 +224,40 @@ message in the launch terminal.
 each launch; a sentence on the robot's
 motion (smooth, hesitant, oscillating) for each controller; and any error printed. The meaning of the checks and the
 numbers they should give are in [navigation.md](navigation.md).
+
+## 12. Moving obstacles (S4)
+
+This part adds people and a cart that move along scripted paths, and scores the navigation stack against them. It needs
+the same install as step 11. Stop any earlier simulation first, and restart the launch before each run (the obstacles
+stay in the world).
+
+**a. See the obstacles.** Start the navigation stack with the `crossing` scenario:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+```
+
+In Gazebo an orange cylinder (the walker) stands at (1.5, -2.0) and does not move yet. In RViz the display "Moving
+obstacles" shows it at the same place, and `ros2 topic echo --once /scenario/ready` prints `data: true`. Take a
+screenshot of both as `scenario-start.png`.
+
+**b. Run it.** In a second terminal, keeping clear of the robot:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
+```
+
+When goal 2 is sent, the walker should start walking north once the robot is about 2 m from the crossing point, and it
+should stop at y = 0.8. In RViz the marker should follow the walker in Gazebo. The run writes
+`nav_run_crossing_dwa_<time>/` with `summary.md`, whose first table says whether the scenario played out as scripted
+(every row should be PASS), then the navigation table, `results.json`, `environment.txt` and `trajectories_crossing.png`.
+Then repeat with `head_on` and `crowd` (restart the launch with `scenario:=head_on` or `scenario:=crowd` first), and
+with `controller:=dwb` and `controller:=rpp` if time allows.
+
+**c. What to watch.** Whether the walker moves smoothly and in a straight line, whether the robot sees it (the local
+costmap marks it) and what the robot does: slows, stops, goes around or touches it. A FAIL in the validity table is
+worth a sentence on what happened (for example the robot pushed the walker).
+
+**What to send back** for this part: `scenario-start.png`; the bundles of the three scenarios with `dwa`; one sentence
+per scenario on how the robot behaved; and any error printed. The measures and the numbers measured on Docker are in
+[navigation.md](navigation.md).

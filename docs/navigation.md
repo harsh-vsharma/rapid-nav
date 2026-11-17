@@ -232,6 +232,103 @@ scripts/dev.sh nav-smoke tour dwa          # Docker: starts the stack, runs the 
 ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa   # native: with the stack already running
 ```
 
+## Moving obstacles and dynamic scenarios
+
+Until now every obstacle stood still. The scenarios `crossing`, `head_on` and `crowd` add obstacles that move the same
+way in every run, so that a controller can be scored against things that move.
+
+**The obstacle model.** Two shapes, both movable bodies of 30 kg that never touch the floor: a `person` (a cylinder,
+radius 0.20 m, 1.70 m high) and a `cart` (a box, 0.60 × 0.40 × 0.90 m). Gazebo's velocity-control system moves a body at
+the velocity it is commanded (in the body's own frame), and the odometry-publisher system publishes its true pose on
+`/model/<name>/odometry` at 30 Hz. Gravity is off for these bodies: with gravity on, a body under velocity control
+tips over and sinks (measured: it fell from 0.87 m to 0.20 m and moved at 0.33 m/s instead of 0.5 m/s), and with
+gravity off it holds its height and its speed to within 0.002 m/s.
+
+**The driver.** `obstacle_driver` (started by `scenario.launch.py`, or by `sim.launch.py scenario:=<name>`) spawns the
+scenario's obstacles at the first point of their paths, and moves each one along its path at its speed, with a small
+term that pulls it back onto the path and a term that holds its heading. It publishes `/scenario/ready` once every
+obstacle exists, listens to `/scenario/goal` (which `nav_run` publishes before sending each goal) and to the robot's
+ground truth to start an obstacle, and draws the obstacles for RViz on `/scenario/obstacles`. The obstacles' true poses
+are for scoring and drawing only: nothing in the navigation stack reads them.
+
+**The scenario format** (`config/nav_scenarios.yaml`; a scenario without `obstacles` works as before):
+
+```yaml
+obstacles:
+  - name: walker_1          # unique in the scenario, [a-z0-9_]+
+    shape: person           # person | cart
+    path: [{x: 1.5, y: -2.0}, {x: 1.5, y: 0.8}]   # at least 2 points; the obstacle spawns at the first
+    speed: 0.5              # m/s, 0 < speed <= 1.0
+    mode: once              # once | back_and_forth | loop
+    start:                  # optional; without it the obstacle starts when goal 1 is sent
+      goal: 2               # armed when goal 2 (1-based) is sent
+      robot_within: 2.2     # optional: then waits until the robot is this close ...
+      of: {x: 1.5, y: 0.0}  # ... to this point
+```
+
+| scenario | goals | what moves |
+|---|---|---|
+| `crossing` | staging (-3.5, 0), (3.5, 0), back to (0, 0) | a person crosses the robot's line from the south, starting when goal 2 is sent and the robot is within 2.2 m of (1.5, 0); it walks 0.5 m/s and stops at y = 0.8 |
+| `head_on` | staging (-3.5, 0), (3.5, 0) | a person walks the robot's own line the other way, from (4.2, 0) at 0.4 m/s, starting when goal 2 is sent |
+| `crowd` | (3.5, 0), (-4, 1), (0, 0) | two persons patrol back and forth (0.3 and 0.5 m/s) and a cart loops at 0.4 m/s; all move from the start |
+
+Run them with the launch `scenario:=` argument, which starts the obstacles; `nav_run` then waits for `/scenario/ready`
+and exits with status 2 and a message when there is no driver. Restart the launch before each run, because the
+obstacles stay in the world.
+
+```bash
+scripts/dev.sh nav-smoke crossing dwa      # Docker
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing      # native, then in a second terminal:
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
+```
+
+**New measures** (per goal, in `summary.md` and `results.json`), taken against the obstacles' true tracks at the same
+simulated time: the minimum clearance now covers the map, the boxes and the moving obstacles; `min_clearance_static_m`
+and `min_clearance_dynamic_m` split it; `closest_approach_m` is the smallest centre-to-centre distance to any
+obstacle; `close_encounters` counts the times the dynamic clearance fell below 0.30 m; collisions are counted on the
+combined clearance. The picture shows each obstacle's track in grey with a dot every 2 s, a green ring where the robot
+was at each goal's closest approach (when it came within 3 m of an obstacle) and the obstacle's outline at that moment.
+
+**Scenario validity.** A dynamic run is only meaningful if the scenario played out as scripted, so `summary.md` starts
+with rows that judge the scenario, not the controller (PASS or FAIL for every controller): an obstacle with a `start`
+moved more than 0.5 m; each obstacle stayed within 0.10 m of its path (over the samples where it was not in contact
+with the robot); its mean moving speed is within 10 % of the scripted speed; and, for `crossing` and `head_on`, the
+robot came within 1.5 m of the walker during goal 2. The navigation rows of a dynamic scenario are information for every
+controller, our DWA included: what the controllers do against moving obstacles is the baseline measured here, and
+nothing was tuned for it. The baseline is Nav2 with the standard lidar obstacle layer: it sees geometry and has no
+notion of what moves, so a moving obstacle leaves a mark in the costmap until the lidar clears it.
+
+### Baseline results (S4)
+
+Measured as above in the Docker development image on an Apple M1 (an arm64 virtual machine with 8 CPUs and 4.8 GiB),
+indicative only; times are simulated seconds. One run per row unless marked repeat.
+
+| scenario | controller | goals reached (truth) | collisions | min dynamic clearance (m) | closest approach (m) | close encounters | recoveries | mean time per goal (s) |
+|---|---|---|---|---|---|---|---|---|
+| crossing | dwa | 3/3 | 1 | -0.051 | 0.40 | 2 | 6 | 14.7 |
+| crossing | dwa (repeat) | 3/3 | 1 | -0.055 | 0.40 | 3 | 8 | 22.0 |
+| crossing | dwb | 3/3 | 1 | -0.055 | 0.40 | 1 | 1 | 14.2 |
+| crossing | rpp | 3/3 | 0 | 0.174 | 0.62 | 2 | 3 | 14.8 |
+| crowd | dwa | 3/3 | 0 | 0.095 | 0.55 | 1 | 0 | 12.6 |
+| crowd | dwb | 3/3 | 0 | 0.019 | 0.54 | 2 | 0 | 12.8 |
+| crowd | rpp | 3/3 | 3 | -0.060 | 0.39 | 4 | 11 | 18.8 |
+| head_on | dwa | 2/2 | 0 | 0.008 | 0.46 | 1 | 0 | 14.3 |
+| head_on | dwa (repeat) | 1/2 | 5 | -0.441 | 0.01 | 1 | 13 | 23.7 |
+| head_on | dwa (repeat) | 2/2 | 1 | -0.009 | 0.44 | 1 | 4 | 14.3 |
+| head_on | dwb | 2/2 | 0 | 0.022 | 0.47 | 1 | 0 | 15.1 |
+| head_on | rpp | 2/2 | 1 | -0.007 | 0.44 | 1 | 4 | 16.2 |
+
+- `crossing`: the walker and the robot meet near (1.5, 0) in every run. Our DWA and DWB each touch the walker once on
+  goal 2 (clearance -0.05 m, 6 to 8 recoveries for DWA); RPP passes at 0.17 m.
+- `head_on`: the walker walks into the robot's line and the robot sidesteps south of it. The closest approach is about
+  0.45 m, with a clearance of about zero. Our DWA's three runs differ: no collision, then a hard collision that pushed
+  the walker off its speed (5 episodes, one goal missed, 13 recoveries), then one touch. DWB passes at 0.02 m, RPP touches
+  once.
+- `crowd`: our DWA and DWB reach every goal without collision (clearances 0.10 m and 0.02 m); RPP collides three times
+  (11 recoveries) while crossing the cart's loop on goal 2.
+- The repeats show that one run of a head-on pass is not enough to rank controllers: the outcome depends on small
+  differences in timing around a clearance of zero.
+
 ## Tools
 
 - **`path_viewer`** answers each goal from RViz ("2D Goal Pose") with every planner, from the robot's current pose. Each
@@ -259,6 +356,7 @@ ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa   # native: wi
   Queries are drawn from the largest region of free cells, which the search can reach from one another. The free
   space outside the arena walls is a separate region and gives no queries.
 - **`nav_run`** runs the goal scenarios and scores them, as described above.
+- **`obstacle_driver`** spawns and moves the obstacles of a dynamic scenario (see "Moving obstacles and dynamic scenarios").
 
 ## Measured results
 
