@@ -57,6 +57,12 @@ def generate_launch_description():
             default_value='dwa',
             description="Controller of the navigation stack: 'dwa' (ours), 'dwb' or 'rpp'.",
         ),
+        DeclareLaunchArgument(
+            'scenario',
+            default_value='',
+            description='Scenario of nav_scenarios.yaml whose moving obstacles to start '
+                        '(empty: none).',
+        ),
     ]
     return LaunchDescription(arguments + [OpaqueFunction(function=launch_setup)])
 
@@ -127,6 +133,13 @@ def launch_setup(context):
                 ('y', y),
                 ('yaw', yaw),
             ],
+        ))
+
+    scenario = LaunchConfiguration('scenario').perform(context).strip()
+    if scenario:
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'scenario.launch.py')),
+            launch_arguments=[('scenario', scenario)],
         ))
 
     if odom_tf == 'ekf':

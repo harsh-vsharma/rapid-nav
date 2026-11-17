@@ -12,7 +12,7 @@ EKF = os.path.join(PACKAGE, 'config', 'ekf.yaml')
 SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
 EXPECTED_ARGUMENTS = {'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-                      'navigation', 'controller'}
+                      'navigation', 'controller', 'scenario'}
 
 
 def load_ekf_parameters():

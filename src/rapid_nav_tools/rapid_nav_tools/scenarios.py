@@ -1,4 +1,8 @@
-"""Moving obstacles of the dynamic scenarios: their shapes, their SDF and their topics."""
+"""Moving obstacles of the dynamic scenarios: shapes, SDF, scripted paths and start triggers."""
+
+import math
+import re
+
 
 MASS_KG = 30.0
 FLOOR_CLEARANCE_M = 0.02
@@ -80,3 +84,146 @@ def obstacle_sdf(name, shape, gravity=False):
     ).format(name=name, gravity='true' if gravity else 'false', mass=MASS_KG,
              ixx=ixx, iyy=iyy, izz=izz, geometry=geometry, colour=colour,
              cmd=cmd_topic, odom=odom_topic)
+
+
+MODES = ('once', 'back_and_forth', 'loop')
+NAME_PATTERN = re.compile(r'^[a-z0-9_]+$')
+MAX_SPEED_MPS = 1.0
+ARRIVE_M = 0.05
+STEP_S = 0.05
+CROSS_TRACK_GAIN = 1.5
+YAW_GAIN = 2.0
+
+
+def validate_scenario(name, scenario):
+    """Raise ValueError naming the scenario and the field when its obstacles are malformed."""
+    def fail(field, why):
+        raise ValueError('scenario {}: {}: {}'.format(name, field, why))
+
+    obstacles = scenario.get('obstacles') or []
+    goal_count = len(scenario.get('goals') or [])
+    seen = set()
+    for index, obstacle in enumerate(obstacles):
+        label = 'obstacles[{}]'.format(index)
+        obstacle_name = obstacle.get('name')
+        if not isinstance(obstacle_name, str) or not NAME_PATTERN.match(obstacle_name):
+            fail(label + '.name', 'must match [a-z0-9_]+, got {!r}'.format(obstacle_name))
+        if obstacle_name in seen:
+            fail(label + '.name', 'duplicate name ' + obstacle_name)
+        seen.add(obstacle_name)
+        if obstacle.get('shape') not in SHAPES:
+            fail(label + '.shape', 'unknown shape {!r}'.format(obstacle.get('shape')))
+        if obstacle.get('mode', 'once') not in MODES:
+            fail(label + '.mode', 'unknown mode {!r}'.format(obstacle.get('mode')))
+        path = obstacle.get('path') or []
+        if len(path) < 2:
+            fail(label + '.path', 'needs at least 2 points')
+        for point in path:
+            if 'x' not in point or 'y' not in point:
+                fail(label + '.path', 'every point needs x and y')
+        speed = obstacle.get('speed')
+        if not isinstance(speed, (int, float)) or not 0.0 < speed <= MAX_SPEED_MPS:
+            fail(label + '.speed', 'must be in (0, {}], got {!r}'.format(MAX_SPEED_MPS, speed))
+        start = obstacle.get('start')
+        if start is not None:
+            if 'robot_within' in start and 'of' not in start:
+                fail(label + '.start', 'robot_within needs of')
+            goal = start.get('goal', 1)
+            if not isinstance(goal, int) or goal < 1 or goal > goal_count:
+                fail(label + '.start.goal', 'must be 1..{}, got {!r}'.format(goal_count, goal))
+
+
+def wrap_angle(angle):
+    """Return the angle wrapped to (-pi, pi]."""
+    wrapped = math.atan2(math.sin(angle), math.cos(angle))
+    return math.pi if wrapped <= -math.pi else wrapped
+
+
+class PathFollower:
+    """Turn the current pose into a body-frame velocity that follows a scripted polyline."""
+
+    def __init__(self, path, speed, mode='once'):
+        """Start on path[0], heading for path[1]."""
+        self.points = [(float(p['x']), float(p['y'])) for p in path]
+        self.speed = float(speed)
+        self.mode = mode
+        self.previous = 0
+        self.target = 1
+        self.direction = 1
+        self.finished = False
+
+    def _advance(self):
+        last = len(self.points) - 1
+        if self.mode == 'once':
+            if self.target == last:
+                self.finished = True
+                return
+            self.previous, self.target = self.target, self.target + 1
+        elif self.mode == 'back_and_forth':
+            if not 0 <= self.target + self.direction <= last:
+                self.direction = -self.direction
+            self.previous, self.target = self.target, self.target + self.direction
+        else:
+            self.previous, self.target = self.target, (self.target + 1) % len(self.points)
+
+    def step(self, x, y, yaw):
+        """Return (vx, vy, wz) in the body frame for the pose (x, y, yaw)."""
+        if self.finished:
+            return 0.0, 0.0, 0.0
+        tx, ty = self.points[self.target]
+        if math.hypot(tx - x, ty - y) <= ARRIVE_M:
+            self._advance()
+            if self.finished:
+                return 0.0, 0.0, 0.0
+            tx, ty = self.points[self.target]
+        dx, dy = tx - x, ty - y
+        dist = math.hypot(dx, dy)
+        ux, uy = (dx / dist, dy / dist) if dist > 1e-9 else (0.0, 0.0)
+        wx, wy = self.speed * ux, self.speed * uy
+        # Cross-track term: the vector from the pose back to the line of the current segment.
+        ax, ay = self.points[self.previous]
+        sx, sy = tx - ax, ty - ay
+        length = math.hypot(sx, sy)
+        if length > 1e-9:
+            along = ((x - ax) * sx + (y - ay) * sy) / (length * length)
+            ex, ey = ax + along * sx - x, ay + along * sy - y
+            wx += CROSS_TRACK_GAIN * ex
+            wy += CROSS_TRACK_GAIN * ey
+        norm = math.hypot(wx, wy)
+        if norm > self.speed:
+            wx, wy = wx * self.speed / norm, wy * self.speed / norm
+        if dist < self.speed * STEP_S:
+            norm = math.hypot(wx, wy)
+            if norm > 1e-9:
+                wx, wy = wx * (dist / STEP_S) / norm, wy * (dist / STEP_S) / norm
+        yaw = wrap_angle(yaw)
+        cos_y, sin_y = math.cos(yaw), math.sin(yaw)
+        return (cos_y * wx + sin_y * wy, -sin_y * wx + cos_y * wy, -YAW_GAIN * yaw)
+
+
+class StartTrigger:
+    """Fire once: when its goal is current and the robot is close enough (latched)."""
+
+    def __init__(self, start=None):
+        """Read the optional start block of an obstacle."""
+        start = start or {}
+        self.goal = int(start.get('goal', 1))
+        self.within = start.get('robot_within')
+        centre = start.get('of')
+        self.centre = (float(centre['x']), float(centre['y'])) if centre else None
+        self.fired = False
+
+    def update(self, goal_index, robot_xy):
+        """Return whether the obstacle has started; goal_index is 1-based (0: none sent yet)."""
+        if self.fired:
+            return True
+        if goal_index < self.goal:
+            return False
+        if self.within is not None:
+            if robot_xy is None:
+                return False
+            if math.hypot(robot_xy[0] - self.centre[0],
+                          robot_xy[1] - self.centre[1]) > float(self.within):
+                return False
+        self.fired = True
+        return True
