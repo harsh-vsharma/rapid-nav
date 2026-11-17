@@ -15,7 +15,9 @@ from rapid_nav_tools.scenarios import (
     PathFollower,
     spawn_height,
     StartTrigger,
+    track_spec,
     validate_scenario,
+    validity_rows,
 )
 import yaml
 
@@ -225,3 +227,26 @@ def test_new_goals_are_clear_of_the_map():
     for name in NEW_SCENARIOS:
         for goal in scenarios[name]['goals']:
             assert nearest_cell(cells, goal['x'], goal['y']) >= 0.6, (name, goal)
+
+
+def moving_track(name, shape, x0, x1, y, seconds, step=0.1):
+    times = [k * step for k in range(int(seconds / step) + 1)]
+    xy = [[x0 + (x1 - x0) * min(t / seconds, 1.0), y] for t in times]
+    return {'name': name, 'shape': shape, 'times': times, 'xy': xy,
+            **track_spec({'name': name, 'shape': shape}, times, xy)}
+
+
+def test_validity_rows_pass_for_a_scripted_run_and_fail_when_it_is_not():
+    scenario = {
+        'goals': [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}],
+        'obstacles': [{'name': 'walker_1', 'shape': 'person', 'speed': 0.5, 'mode': 'once',
+                       'path': [{'x': 0.0, 'y': 2.0}, {'x': 4.0, 'y': 2.0}],
+                       'start': {'goal': 2}}]}
+    good = moving_track('walker_1', 'person', 0.0, 4.0, 2.0, 8.0)
+    rows = validity_rows('crossing', scenario, {'walker_1': good}, [0.0, 8.0],
+                         [[2.0, 0.0], [2.0, 0.0]], 1.2, 0.25)
+    assert [r['verdict'] for r in rows] == ['PASS'] * 4
+    slow = moving_track('walker_1', 'person', 0.0, 2.0, 2.3, 8.0)
+    rows = validity_rows('crossing', scenario, {'walker_1': slow}, [0.0, 8.0],
+                         [[2.0, 0.0], [2.0, 0.0]], 2.0, 0.25)
+    assert [r['verdict'] for r in rows] == ['PASS', 'FAIL', 'FAIL', 'FAIL']

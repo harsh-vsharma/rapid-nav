@@ -11,10 +11,14 @@ from rapid_nav_tools.checks import (
     clearances,
     collision_episodes,
     colourise_depth,
+    dynamic_clearance,
     expected_fx,
     heading_change_per_metre,
+    interpolate_track,
     max_step,
+    moving_speed,
     occupied_cells_xy,
+    path_conformance,
     path_length,
     planar_delta,
     quaternion_from_rpy,
@@ -256,3 +260,50 @@ def test_tracking_error_in_force_uses_the_plan_published_last_before_each_point(
 def test_travelled_length_follows_the_positions():
     """Three metres east then four north is seven metres of travel."""
     assert travelled_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
+
+
+def test_interpolate_track_is_linear_and_held_outside():
+    at = interpolate_track([0.0, 2.0], [[0.0, 0.0], [2.0, 4.0]], [-1.0, 0.5, 1.0, 3.0])
+    assert at.tolist() == [[0.0, 0.0], [0.5, 1.0], [1.0, 2.0], [2.0, 4.0]]
+
+
+def test_dynamic_clearance_circle_and_box():
+    robot = [[0.0, 0.0], [0.0, 0.0]]
+    tracks = [
+        {'name': 'p', 'times': [0.0, 1.0], 'xy': [[2.0, 0.0], [1.0, 0.0]], 'kind': 'circle',
+         'radius': 0.2},
+        {'name': 'c', 'times': [0.0, 1.0], 'xy': [[0.0, 3.0], [0.0, 3.0]], 'kind': 'box',
+         'half_x': 0.3, 'half_y': 0.2},
+    ]
+    per_sample, per_obstacle = dynamic_clearance(robot, [0.0, 1.0], tracks, 0.25)
+    # circle: 2.0 - 0.2 - 0.25 = 1.55 then 1.0 - 0.45 = 0.55; box: 3.0 - 0.2 - 0.25 = 2.55
+    assert per_sample.tolist() == pytest.approx([1.55, 0.55])
+    assert per_obstacle == pytest.approx({'p': 0.55, 'c': 2.55})
+    none, empty = dynamic_clearance(robot, [0.0, 1.0], [], 0.25)
+    assert np.isinf(none).all() and empty == {}
+
+
+def test_dynamic_clearance_box_corner_and_overlap():
+    tracks = [{'name': 'c', 'times': [0.0], 'xy': [[1.0, 1.0]], 'kind': 'box',
+               'half_x': 0.5, 'half_y': 0.5}]
+    corner, _ = dynamic_clearance([[0.0, 0.0]], [0.0], tracks, 0.25)
+    assert corner[0] == pytest.approx(math.hypot(0.5, 0.5) - 0.25)
+    inside, _ = dynamic_clearance([[1.0, 1.0]], [0.0], tracks, 0.25)
+    assert inside[0] == pytest.approx(-0.25)
+
+
+def test_path_conformance_offset_and_loop():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 4.0, 'y': 0.0}]
+    assert path_conformance([[1.0, 0.03], [2.0, -0.01]], path, 'once') == pytest.approx(0.03)
+    assert path_conformance([[5.0, 0.0]], path, 'once') == pytest.approx(1.0)
+    square = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}, {'x': 2.0, 'y': 2.0}]
+    # the closing segment runs from (2, 2) back to (0, 0): (1, 1) is on it only for a loop
+    assert path_conformance([[1.0, 1.0]], square, 'loop') == pytest.approx(0.0)
+    assert path_conformance([[1.0, 1.0]], square, 'once') == pytest.approx(1.0)
+
+
+def test_moving_speed_ignores_standing_steps():
+    times = [0.0, 1.0, 2.0, 3.0, 4.0]
+    xy = [[0.0, 0.0], [0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.0, 0.0]]
+    assert moving_speed(times, xy) == pytest.approx(0.5)
+    assert moving_speed([0.0, 1.0], [[0, 0], [0, 0]]) == 0.0

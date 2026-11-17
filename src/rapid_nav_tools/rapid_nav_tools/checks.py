@@ -212,6 +212,77 @@ def body_clearance(xy, occupied_xy, extra_boxes, radius, cell=0.05, chunk=128):
     return result
 
 
+def interpolate_track(times, xy, query_times):
+    """Return the track's (x, y) at the query times: linear per axis, held outside the samples."""
+    times = np.asarray(times, dtype=np.float64).ravel()
+    points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    query = np.asarray(query_times, dtype=np.float64).ravel()
+    return np.column_stack([np.interp(query, times, points[:, 0]),
+                            np.interp(query, times, points[:, 1])])
+
+
+def dynamic_clearance(robot_xy, robot_times, tracks, radius):
+    """
+    Return (per_sample, per_obstacle_min): the robot circle's clearance to moving obstacles.
+
+    Each track is a dict with name, times, xy and kind: 'circle' (radius) or 'box' (half_x,
+    half_y, axis-aligned). The clearance of a sample is the distance from the robot's circle to
+    the obstacle's outline at the same time (negative: overlap). per_sample is the minimum over
+    the obstacles (infinite with none); per_obstacle_min maps each name to its own minimum.
+    """
+    centres = _polyline(robot_xy)
+    per_sample = np.full(centres.shape[0], np.inf)
+    per_obstacle = {}
+    for track in tracks:
+        at = interpolate_track(track['times'], track['xy'], robot_times)
+        if track['kind'] == 'circle':
+            gap = np.hypot(centres[:, 0] - at[:, 0], centres[:, 1] - at[:, 1]) \
+                - track['radius'] - radius
+        else:
+            dx = np.maximum(np.abs(centres[:, 0] - at[:, 0]) - track['half_x'], 0.0)
+            dy = np.maximum(np.abs(centres[:, 1] - at[:, 1]) - track['half_y'], 0.0)
+            gap = np.hypot(dx, dy) - radius
+        per_obstacle[track['name']] = float(gap.min()) if gap.size else float('inf')
+        per_sample = np.minimum(per_sample, gap)
+    return per_sample, per_obstacle
+
+
+def path_conformance(track_xy, path, mode):
+    """Return the largest distance in metres from a track point to the scripted polyline."""
+    points = np.asarray(track_xy, dtype=np.float64).reshape(-1, 2)
+    vertices = [(float(p['x']), float(p['y'])) if isinstance(p, dict)
+                else (float(p[0]), float(p[1])) for p in path]
+    if mode == 'loop':
+        vertices.append(vertices[0])
+    if points.shape[0] == 0:
+        return 0.0
+    nearest = np.full(points.shape[0], np.inf)
+    for (ax, ay), (bx, by) in zip(vertices[:-1], vertices[1:]):
+        sx, sy = bx - ax, by - ay
+        length2 = sx * sx + sy * sy
+        if length2 == 0.0:
+            along = np.zeros(points.shape[0])
+        else:
+            along = np.clip(((points[:, 0] - ax) * sx + (points[:, 1] - ay) * sy) / length2,
+                            0.0, 1.0)
+        nearest = np.minimum(nearest, np.hypot(points[:, 0] - (ax + along * sx),
+                                               points[:, 1] - (ay + along * sy)))
+    return float(nearest.max())
+
+
+def moving_speed(times, xy, min_speed=0.05):
+    """Return the mean speed over the steps faster than min_speed (zero when none is)."""
+    t = np.asarray(times, dtype=np.float64).ravel()
+    points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    if t.size < 2:
+        return 0.0
+    dt = np.diff(t)
+    valid = dt > 0
+    speed = np.hypot(np.diff(points[:, 0]), np.diff(points[:, 1]))[valid] / dt[valid]
+    moving = speed[speed > min_speed]
+    return float(moving.mean()) if moving.size else 0.0
+
+
 def collision_episodes(clearances, threshold=0.0):
     """Return how many times the clearance falls below the threshold: entries, not samples."""
     values = np.asarray(clearances, dtype=np.float64).ravel()

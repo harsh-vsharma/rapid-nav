@@ -3,6 +3,14 @@
 import math
 import re
 
+import numpy as np
+from rapid_nav_tools.checks import (
+    dynamic_clearance,
+    interpolate_track,
+    moving_speed,
+    path_conformance,
+)
+
 
 MASS_KG = 30.0
 FLOOR_CLEARANCE_M = 0.02
@@ -227,3 +235,65 @@ class StartTrigger:
                 return False
         self.fired = True
         return True
+
+
+TRIGGER_MOVE_M = 0.5
+CONFORMANCE_M = 0.10
+CONTACT_M = 0.05
+SPEED_TOLERANCE = 0.10
+ENCOUNTER_M = 1.5
+
+
+def track_spec(obstacle, times, xy):
+    """Return the track dict of dynamic_clearance for a scenario obstacle and its samples."""
+    spec = SHAPES[obstacle['shape']]
+    track = {'name': obstacle['name'], 'times': list(times), 'xy': [list(p) for p in xy]}
+    if spec['kind'] == 'cylinder':
+        track.update(kind='circle', radius=spec['radius'])
+    else:
+        track.update(kind='box', half_x=spec['size'][0] / 2.0, half_y=spec['size'][1] / 2.0)
+    return track
+
+
+def validity_rows(scenario_name, scenario, tracks, robot_times, robot_xy, encounter_m, radius):
+    """
+    Return the rows that judge whether the scenario played out as scripted.
+
+    tracks maps an obstacle's name to its track dict (times, xy, shape); encounter_m is the
+    robot's closest approach to walker_1 during goal 2 (None when unknown).
+    """
+    rows = []
+
+    def add(check, value, expected, ok):
+        rows.append({'check': check, 'value': value, 'expected': expected,
+                     'verdict': 'PASS' if ok else 'FAIL'})
+
+    for obstacle in scenario.get('obstacles') or []:
+        name = obstacle['name']
+        track = tracks[name]
+        times = np.asarray(track['times'], dtype=np.float64)
+        xy = np.asarray(track['xy'], dtype=np.float64).reshape(-1, 2)
+        moved = float(np.max(np.hypot(xy[:, 0] - xy[0, 0], xy[:, 1] - xy[0, 1]))) \
+            if xy.size else 0.0
+        if obstacle.get('start'):
+            add('{} started'.format(name), '{:.2f} m moved'.format(moved),
+                '> {} m'.format(TRIGGER_MOVE_M), moved > TRIGGER_MOVE_M)
+        if xy.shape[0] and len(robot_times):
+            at_robot = interpolate_track(robot_times, robot_xy, times)
+            gap, _ = dynamic_clearance(at_robot, times, [track], radius)
+            free = gap > CONTACT_M
+        else:
+            free = np.ones(xy.shape[0], dtype=bool)
+        deviation = path_conformance(xy[free], obstacle['path'], obstacle.get('mode', 'once')) \
+            if free.any() else 0.0
+        add('{} follows its path'.format(name), '{:.3f} m'.format(deviation),
+            '<= {} m'.format(CONFORMANCE_M), deviation <= CONFORMANCE_M)
+        speed = moving_speed(times, xy)
+        wanted = float(obstacle['speed'])
+        add('{} speed'.format(name), '{:.3f} m/s'.format(speed),
+            '{:.2f} m/s +- 10 %'.format(wanted), abs(speed - wanted) <= SPEED_TOLERANCE * wanted)
+    if scenario_name in ('crossing', 'head_on'):
+        add('encounter happened (walker_1, goal 2)',
+            '-' if encounter_m is None else '{:.2f} m'.format(encounter_m),
+            '<= {} m'.format(ENCOUNTER_M), encounter_m is not None and encounter_m <= ENCOUNTER_M)
+    return rows

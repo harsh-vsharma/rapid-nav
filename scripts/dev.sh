@@ -28,8 +28,9 @@ usage: scripts/dev.sh <command>
                   planning stack + planner_check; offline (static localisation) on the map, or with
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
-  nav-smoke <tour|unmapped> <dwa|dwb|rpp>
-                  navigation stack in the simulation + nav_run (goal runs scored on ground truth);
+  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>
+                  navigation stack in the simulation + nav_run (goal runs scored on ground truth,
+                  against the moving obstacles of the crossing, head_on and crowd scenarios);
                   the bundle goes to nav_run_<scenario>_<controller>_<time>/
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
@@ -124,13 +125,13 @@ case "${1:-}" in
     nav-smoke)
         shift
         if [ "$#" -ne 2 ]; then
-            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped> <dwa|dwb|rpp>" >&2
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>" >&2
             exit 2
         fi
         scenario="$1"
         controller="$2"
         case "$scenario" in
-            tour|unmapped) ;;
+            tour|unmapped|crossing|head_on|crowd) ;;
             *) echo "nav-smoke: unknown scenario $scenario" >&2; exit 2 ;;
         esac
         case "$controller" in
@@ -139,7 +140,7 @@ case "${1:-}" in
         esac
         stamp="$(date +%Y%m%d-%H%M%S)"
         bundle="/repo/nav_run_${scenario}_${controller}_$stamp"
-        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario"
         check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --profile docker --out $bundle"
         # Start the navigation stack in the background, run nav_run (it waits for the clock and the
         # navigation action server), copy the launch log into the bundle, stop the stack and exit
