@@ -11,10 +11,15 @@ from rapid_nav_tools.checks import (
     clearances,
     collision_episodes,
     colourise_depth,
+    dynamic_clearance,
     expected_fx,
     heading_change_per_metre,
+    interpolate_track,
+    longest_stall,
     max_step,
+    moving_speed,
     occupied_cells_xy,
+    path_conformance,
     path_length,
     planar_delta,
     quaternion_from_rpy,
@@ -256,3 +261,94 @@ def test_tracking_error_in_force_uses_the_plan_published_last_before_each_point(
 def test_travelled_length_follows_the_positions():
     """Three metres east then four north is seven metres of travel."""
     assert travelled_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
+
+
+def test_interpolate_track_is_linear_and_held_outside():
+    at = interpolate_track([0.0, 2.0], [[0.0, 0.0], [2.0, 4.0]], [-1.0, 0.5, 1.0, 3.0])
+    assert at.tolist() == [[0.0, 0.0], [0.5, 1.0], [1.0, 2.0], [2.0, 4.0]]
+
+
+def test_dynamic_clearance_circle_and_box():
+    robot = [[0.0, 0.0], [0.0, 0.0]]
+    tracks = [
+        {'name': 'p', 'times': [0.0, 1.0], 'xy': [[2.0, 0.0], [1.0, 0.0]], 'kind': 'circle',
+         'radius': 0.2},
+        {'name': 'c', 'times': [0.0, 1.0], 'xy': [[0.0, 3.0], [0.0, 3.0]], 'kind': 'box',
+         'half_x': 0.3, 'half_y': 0.2},
+    ]
+    per_sample, per_obstacle = dynamic_clearance(robot, [0.0, 1.0], tracks, 0.25)
+    # circle: 2.0 - 0.2 - 0.25 = 1.55 then 1.0 - 0.45 = 0.55; box: 3.0 - 0.2 - 0.25 = 2.55
+    assert per_sample.tolist() == pytest.approx([1.55, 0.55])
+    assert per_obstacle == pytest.approx({'p': 0.55, 'c': 2.55})
+    none, empty = dynamic_clearance(robot, [0.0, 1.0], [], 0.25)
+    assert np.isinf(none).all() and empty == {}
+
+
+def test_dynamic_clearance_box_corner_and_overlap():
+    tracks = [{'name': 'c', 'times': [0.0], 'xy': [[1.0, 1.0]], 'kind': 'box',
+               'half_x': 0.5, 'half_y': 0.5}]
+    corner, _ = dynamic_clearance([[0.0, 0.0]], [0.0], tracks, 0.25)
+    assert corner[0] == pytest.approx(math.hypot(0.5, 0.5) - 0.25)
+    inside, _ = dynamic_clearance([[1.0, 1.0]], [0.0], tracks, 0.25)
+    assert inside[0] == pytest.approx(-0.25)
+
+
+def test_path_conformance_offset_and_loop():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 4.0, 'y': 0.0}]
+    assert path_conformance([[1.0, 0.03], [2.0, -0.01]], path, 'once') == pytest.approx(0.03)
+    assert path_conformance([[5.0, 0.0]], path, 'once') == pytest.approx(1.0)
+    square = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}, {'x': 2.0, 'y': 2.0}]
+    # the closing segment runs from (2, 2) back to (0, 0): (1, 1) is on it only for a loop
+    assert path_conformance([[1.0, 1.0]], square, 'loop') == pytest.approx(0.0)
+    assert path_conformance([[1.0, 1.0]], square, 'once') == pytest.approx(1.0)
+
+
+def test_moving_speed_ignores_standing_steps():
+    times = [0.0, 1.0, 2.0, 3.0, 4.0]
+    xy = [[0.0, 0.0], [0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.0, 0.0]]
+    assert moving_speed(times, xy) == pytest.approx(0.5)
+    assert moving_speed([0.0, 1.0], [[0, 0], [0, 0]]) == 0.0
+
+
+def test_moving_speed_skips_masked_steps():
+    times = [0.0, 1.0, 2.0, 3.0]
+    xy = [[0.0, 0.0], [0.4, 0.0], [0.6, 0.0], [1.0, 0.0]]
+    # The step 1 -> 2 (pushed, 0.2 m/s) touches a masked sample, so only 0.4 m/s steps count.
+    assert moving_speed(times, xy, mask=[True, True, False, True]) == pytest.approx(0.4)
+    assert moving_speed(times, xy) == pytest.approx(1.0 / 3.0)
+
+
+def straight_track(stuck_from, stuck_to, seconds=12.0, speed=0.5):
+    times = [k * 0.1 for k in range(int(seconds / 0.1) + 1)]
+    xy, x = [], 0.0
+    for t in times:
+        if not stuck_from <= t < stuck_to:
+            x += speed * 0.1
+        xy.append([x, 0.0])
+    return times, xy
+
+
+def test_longest_stall_finds_a_stuck_free_obstacle():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    gap = [5.0] * 121
+    times, xy = straight_track(4.0, 8.0)
+    # stuck for 4 s: the stalled windows start from about 3.6 s to 7.4 s and cover about 4.8 s
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == pytest.approx(4.8, abs=0.3)
+    times, xy = straight_track(99.0, 100.0)
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == 0.0
+
+
+def test_longest_stall_ignores_contact_start_vertices_and_the_end():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    times, xy = straight_track(4.0, 8.0)
+    # the robot is near the whole time: nothing counts
+    assert longest_stall(times, xy, [0.1] * 121, 0.5, path, 'once') == 0.0
+    # waiting at a vertex (a reversal) is not a stall
+    vertices = [{'x': 0.0, 'y': 0.0}, {'x': 3.0, 'y': 0.0}]
+    at_vertex = [[min(0.5 * 0.1 * k, 3.0), 0.0] for k in range(121)]
+    assert longest_stall(times, at_vertex, [5.0] * 121, 0.5, vertices, 'back_and_forth') == 0.0
+    # finished at the end of a 'once' path
+    short = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}]
+    times2, xy2 = straight_track(100.0, 101.0, seconds=10.0)
+    xy2 = [[min(p[0], 2.0), 0.0] for p in xy2]
+    assert longest_stall(times2, xy2, [5.0] * len(times2), 0.5, short, 'once') == 0.0

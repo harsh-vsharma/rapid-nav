@@ -234,6 +234,18 @@ Visualization Manager:
           Value: true
       Enabled: true
       Name: Planned paths
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Moving obstacles
+      Namespaces:
+        scenario: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /scenario/obstacles
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

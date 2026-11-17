@@ -13,7 +13,7 @@ A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT
 ## Status
 
 The robot, the simulation, the global planning (localisation on the map, the planner server with our planners) and the
-local control (Nav2's controller and behaviour servers, with our dynamic window controller) are in testing; perception
+local control (Nav2's controller and behaviour servers, with our dynamic window controller) and the moving obstacles with their scenarios are in testing; perception
 is paused; the other parts are planned.
 
 | Part | Stage | Status |
@@ -21,7 +21,7 @@ is paused; the other parts are planned.
 | Robot and simulation | S1 | in testing |
 | Perception | S2 | paused |
 | Ego-motion compensation | S3 | planned |
-| Dynamic scenarios | S4 | planned |
+| Dynamic scenarios: moving obstacles and the geometry baseline | S4 | in testing |
 | Navigation baseline: global planning | S5 | in testing |
 | Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
 | Hazard map to costmap | S7 | planned |
@@ -116,8 +116,16 @@ With the stack running, run a goal scenario and score it on the simulator's grou
 ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa
 ```
 
+Add moving obstacles (a person who crosses the robot's path, one who comes head-on, a small crowd) with the `scenario:=`
+argument (`crossing`, `head_on` or `crowd`), then run the same scenario:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
+```
+
 The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
-steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 and 11).
+steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10, 11 and 12).
 
 The robot is described in [docs/robot.md](docs/robot.md). The step-by-step check procedure for testers is in
 [docs/sim-checks.md](docs/sim-checks.md).

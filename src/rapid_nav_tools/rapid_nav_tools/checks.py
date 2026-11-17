@@ -212,6 +212,137 @@ def body_clearance(xy, occupied_xy, extra_boxes, radius, cell=0.05, chunk=128):
     return result
 
 
+def interpolate_track(times, xy, query_times):
+    """Return the track's (x, y) at the query times: linear per axis, held outside the samples."""
+    times = np.asarray(times, dtype=np.float64).ravel()
+    points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    query = np.asarray(query_times, dtype=np.float64).ravel()
+    return np.column_stack([np.interp(query, times, points[:, 0]),
+                            np.interp(query, times, points[:, 1])])
+
+
+def dynamic_clearance(robot_xy, robot_times, tracks, radius):
+    """
+    Return (per_sample, per_obstacle_min): the robot circle's clearance to moving obstacles.
+
+    Each track is a dict with name, times, xy and kind: 'circle' (radius) or 'box' (half_x,
+    half_y, axis-aligned). The clearance of a sample is the distance from the robot's circle to
+    the obstacle's outline at the same time (negative: overlap). per_sample is the minimum over
+    the obstacles (infinite with none); per_obstacle_min maps each name to its own minimum.
+    """
+    centres = _polyline(robot_xy)
+    per_sample = np.full(centres.shape[0], np.inf)
+    per_obstacle = {}
+    for track in tracks:
+        at = interpolate_track(track['times'], track['xy'], robot_times)
+        if track['kind'] == 'circle':
+            gap = np.hypot(centres[:, 0] - at[:, 0], centres[:, 1] - at[:, 1]) \
+                - track['radius'] - radius
+        else:
+            dx = np.maximum(np.abs(centres[:, 0] - at[:, 0]) - track['half_x'], 0.0)
+            dy = np.maximum(np.abs(centres[:, 1] - at[:, 1]) - track['half_y'], 0.0)
+            gap = np.hypot(dx, dy) - radius
+        per_obstacle[track['name']] = float(gap.min()) if gap.size else float('inf')
+        per_sample = np.minimum(per_sample, gap)
+    return per_sample, per_obstacle
+
+
+def path_conformance(track_xy, path, mode):
+    """Return the largest distance in metres from a track point to the scripted polyline."""
+    points = np.asarray(track_xy, dtype=np.float64).reshape(-1, 2)
+    vertices = [(float(p['x']), float(p['y'])) if isinstance(p, dict)
+                else (float(p[0]), float(p[1])) for p in path]
+    if mode == 'loop':
+        vertices.append(vertices[0])
+    if points.shape[0] == 0:
+        return 0.0
+    nearest = np.full(points.shape[0], np.inf)
+    for (ax, ay), (bx, by) in zip(vertices[:-1], vertices[1:]):
+        sx, sy = bx - ax, by - ay
+        length2 = sx * sx + sy * sy
+        if length2 == 0.0:
+            along = np.zeros(points.shape[0])
+        else:
+            along = np.clip(((points[:, 0] - ax) * sx + (points[:, 1] - ay) * sy) / length2,
+                            0.0, 1.0)
+        nearest = np.minimum(nearest, np.hypot(points[:, 0] - (ax + along * sx),
+                                               points[:, 1] - (ay + along * sy)))
+    return float(nearest.max())
+
+
+def moving_speed(times, xy, min_speed=0.05, mask=None):
+    """
+    Return the mean speed over the steps faster than min_speed (zero when none is).
+
+    With a mask (one bool per sample), only the steps whose two ends are both True count, so
+    the samples where something else pushed the track can be left out.
+    """
+    t = np.asarray(times, dtype=np.float64).ravel()
+    points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    if t.size < 2:
+        return 0.0
+    dt = np.diff(t)
+    valid = dt > 0
+    if mask is not None:
+        keep = np.asarray(mask, dtype=bool).ravel()
+        valid &= keep[:-1] & keep[1:]
+    speed = np.hypot(np.diff(points[:, 0]), np.diff(points[:, 1]))[valid] / dt[valid]
+    moving = speed[speed > min_speed]
+    return float(moving.mean()) if moving.size else 0.0
+
+
+def longest_stall(times, xy, gap, speed, path, mode, window=1.0, near_robot=0.30,
+                  started=0.30, finished=0.10, near_vertex=0.30):
+    """
+    Return the longest time in seconds a track stood still although nothing explains it.
+
+    A window is the span of `window` seconds starting at a sample. Only windows where the
+    obstacle is free (its clearance `gap` to the robot is above near_robot throughout), has
+    started (moved more than `started` from its first point), is not finished (for mode 'once',
+    more than `finished` from the last path point) and stays more than `near_vertex` from every
+    path vertex (corners and reversals slow down legitimately) are judged. A window is stalled
+    when the net displacement is below half of speed * window. A run of consecutive stalled
+    windows covers (last start - first start + window) seconds; the longest one is returned
+    (zero when none is stalled).
+    """
+    t = np.asarray(times, dtype=np.float64).ravel()
+    points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    free = np.asarray(gap, dtype=np.float64).ravel() > near_robot
+    vertices = np.asarray([(float(p['x']), float(p['y'])) if isinstance(p, dict)
+                           else (float(p[0]), float(p[1])) for p in path], dtype=np.float64)
+    if t.size < 2:
+        return 0.0
+    to_vertex = np.min(np.hypot(points[:, None, 0] - vertices[None, :, 0],
+                                points[:, None, 1] - vertices[None, :, 1]), axis=1)
+    far_from_vertices = to_vertex > near_vertex
+    moved = np.hypot(points[:, 0] - points[0, 0], points[:, 1] - points[0, 1]) > started
+    if mode == 'once':
+        active = np.hypot(points[:, 0] - vertices[-1, 0],
+                          points[:, 1] - vertices[-1, 1]) > finished
+    else:
+        active = np.ones(t.size, dtype=bool)
+    eligible_sample = free & far_from_vertices & active
+    longest = 0.0
+    run_first = None
+    for i in range(t.size):
+        j = int(np.searchsorted(t, t[i] + window - 1e-9))
+        if j >= t.size:
+            break
+        ok = bool(moved[i]) and bool(eligible_sample[i:j + 1].all())
+        if ok:
+            displacement = float(np.hypot(*(points[j] - points[i])))
+            stalled = displacement < 0.5 * speed * (t[j] - t[i])
+        else:
+            stalled = False
+        if stalled:
+            if run_first is None:
+                run_first = t[i]
+            longest = max(longest, t[i] - run_first + window)
+        else:
+            run_first = None
+    return float(longest)
+
+
 def collision_episodes(clearances, threshold=0.0):
     """Return how many times the clearance falls below the threshold: entries, not samples."""
     values = np.asarray(clearances, dtype=np.float64).ravel()

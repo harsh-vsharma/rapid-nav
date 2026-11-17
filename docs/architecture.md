@@ -69,4 +69,15 @@ The local side (S6, details in [navigation.md](navigation.md)):
 - **Goal runs.** `nav_run` sends the scenario's goals and scores them on the simulator's ground truth, not on the wheel
   odometry.
 
+The simulation side of the moving obstacles (S4, details in [navigation.md](navigation.md)):
+
+- **Obstacles.** Movable bodies (a person cylinder, a cart box) spawned into the arena by `obstacle_driver`. Gazebo's
+  velocity-control system moves each at the commanded velocity, and its odometry-publisher system publishes the true
+  pose; `ros_gz_bridge` carries both topics (`/model/<name>/cmd_vel`, `/model/<name>/odometry`).
+- **Driver.** `obstacle_driver` follows each obstacle's scripted path, starts it when `nav_run` announces its goal on
+  `/scenario/goal` (and the robot is close enough, when the scenario says so), and publishes `/scenario/ready` and the
+  RViz markers `/scenario/obstacles`.
+- **Ground truth only for scoring.** The obstacles' true poses are read by `nav_run` and RViz, never by the navigation
+  stack: the stack sees them as lidar geometry, which is the baseline.
+
 The hazard layer (velocity-aware cells from the flow) arrives in S7.

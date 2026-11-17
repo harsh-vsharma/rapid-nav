@@ -23,6 +23,7 @@
   <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>rapid_nav_navigation</exec_depend>
+  <exec_depend>rapid_nav_tools</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
