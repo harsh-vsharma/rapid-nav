@@ -9,6 +9,7 @@ from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rapid_nav_tools.scenarios import (
+    body_command,
     obstacle_sdf,
     obstacle_topics,
     PathFollower,
@@ -38,10 +39,12 @@ def load_scenarios():
         return yaml.safe_load(handle)
 
 
-def yaw_of(orientation):
-    """Return the yaw of a quaternion message."""
-    return math.atan2(2.0 * (orientation.w * orientation.z + orientation.x * orientation.y),
-                      1.0 - 2.0 * (orientation.y ** 2 + orientation.z ** 2))
+def euler_of(q):
+    """Return (roll, pitch, yaw) of a quaternion message."""
+    roll = math.atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x ** 2 + q.y ** 2))
+    pitch = math.asin(max(-1.0, min(1.0, 2.0 * (q.w * q.y - q.z * q.x))))
+    yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y ** 2 + q.z ** 2))
+    return roll, pitch, yaw
 
 
 class ObstacleDriver(Node):
@@ -84,7 +87,7 @@ class ObstacleDriver(Node):
     def on_obstacle(self, name, msg):
         """Remember an obstacle's true pose; announce readiness once all have reported."""
         p = msg.pose.pose
-        self.pose[name] = (p.position.x, p.position.y, yaw_of(p.orientation))
+        self.pose[name] = (p.position.x, p.position.y) + euler_of(p.orientation)
         if not self.ready and len(self.pose) == len(self.obstacles):
             self.ready = True
             self.ready_pub.publish(Bool(data=True))
@@ -110,8 +113,12 @@ class ObstacleDriver(Node):
                     self.get_logger().info('{} starts at sim t = {:.2f} s'.format(
                         name, self.now_s()))
                 if self.triggers[name].fired:
-                    vx, vy, wz = follower.step(*pose)
-                    cmd.linear.x, cmd.linear.y, cmd.angular.z = vx, vy, wz
+                    # The follower gives the world velocity (heading 0); the full orientation
+                    # turns it into the body frame and levels the body.
+                    wx, wy, _ = follower.step(pose[0], pose[1], 0.0)
+                    command = body_command(wx, wy, pose[2], pose[3], pose[4])
+                    cmd.linear.x, cmd.linear.y, cmd.linear.z = command[:3]
+                    cmd.angular.x, cmd.angular.y, cmd.angular.z = command[3:]
             self.cmd_pub[name].publish(cmd)
 
     def publish_markers(self):
@@ -131,8 +138,8 @@ class ObstacleDriver(Node):
             marker.pose.position.x = pose[0]
             marker.pose.position.y = pose[1]
             marker.pose.position.z = shape_height(obstacle['shape']) / 2.0
-            marker.pose.orientation.z = math.sin(pose[2] / 2.0)
-            marker.pose.orientation.w = math.cos(pose[2] / 2.0)
+            marker.pose.orientation.z = math.sin(pose[4] / 2.0)
+            marker.pose.orientation.w = math.cos(pose[4] / 2.0)
             if spec['kind'] == 'cylinder':
                 marker.type = Marker.CYLINDER
                 marker.scale.x = marker.scale.y = 2.0 * spec['radius']

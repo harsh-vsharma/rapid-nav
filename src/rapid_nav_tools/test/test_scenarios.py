@@ -9,6 +9,7 @@ from PIL import Image
 import pytest
 from rapid_nav_tools.checks import occupied_cells_xy
 from rapid_nav_tools.scenarios import (
+    body_command,
     inertia,
     obstacle_sdf,
     obstacle_topics,
@@ -51,13 +52,13 @@ def test_sdf_gravity_flag_and_shapes():
 
 def test_inertia_cylinder_and_box():
     # 30 * (3 * 0.04 + 2.89) / 12 = 7.525 ; 30 * 0.04 / 2 = 0.6
-    ixx, iyy, izz = inertia('person')
+    ixx, iyy, izz = inertia('person', mass=30.0)
     assert ixx == pytest.approx(7.525)
     assert iyy == pytest.approx(7.525)
     assert izz == pytest.approx(0.6)
     # box 0.6 x 0.4 x 0.9: 30 * (0.16 + 0.81) / 12 = 2.425 ; 30 * (0.36 + 0.81) / 12 = 2.925 ;
     # 30 * (0.36 + 0.16) / 12 = 1.3
-    ixx, iyy, izz = inertia('cart')
+    ixx, iyy, izz = inertia('cart', mass=30.0)
     assert (ixx, iyy, izz) == pytest.approx((2.425, 2.925, 1.3))
 
 
@@ -250,3 +251,40 @@ def test_validity_rows_pass_for_a_scripted_run_and_fail_when_it_is_not():
     rows = validity_rows('crossing', scenario, {'walker_1': slow}, [0.0, 8.0],
                          [[2.0, 0.0], [2.0, 0.0]], 2.0, 0.25)
     assert [r['verdict'] for r in rows] == ['PASS', 'FAIL', 'FAIL', 'FAIL']
+
+
+def test_sdf_is_heavy_and_hard_to_tip():
+    root = ET.fromstring(obstacle_sdf('w', 'person'))
+    inertial = root.find('model/link/inertial')
+    assert float(inertial.find('mass').text) == 1000.0
+    assert float(inertial.find('inertia/ixx').text) == 1.0e5
+    assert float(inertial.find('inertia/iyy').text) == 1.0e5
+    assert float(inertial.find('inertia/izz').text) == pytest.approx(1000.0 * 0.04 / 2.0)
+    assert root.find('model/link/gravity').text == 'false'
+
+
+def rotation(roll, pitch, yaw):
+    cr, sr, cp, sp = math.cos(roll), math.sin(roll), math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return [[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr]]
+
+
+def test_body_command_level_yaw_and_tilted():
+    assert body_command(0.5, 0.0, 0.0, 0.0, 0.0) == pytest.approx((0.5, 0.0, 0.0, 0, 0, 0))
+    vx, vy, vz, wx, wy, wz = body_command(0.5, 0.0, 0.0, 0.0, 0.3)
+    assert (vx, vy, vz) == pytest.approx((0.5 * math.cos(0.3), -0.5 * math.sin(0.3), 0.0))
+    assert wz == pytest.approx(-0.6) and wx == 0.0 and wy == 0.0
+    vx, vy, vz, wx, wy, wz = body_command(0.4, 0.3, 0.2, 0.0, 0.0)
+    assert wx == pytest.approx(-0.4)
+    assert abs(vz) > 0.0
+    # back in the world, the command has no component into the floor
+    world = [sum(rotation(0.2, 0.0, 0.0)[r][c] * (vx, vy, vz)[c] for c in range(3))
+             for r in range(3)]
+    assert world == pytest.approx([0.4, 0.3, 0.0])
+    vx, vy, vz, wx, wy, wz = body_command(0.4, 0.3, 0.1, -0.15, 0.5)
+    world = [sum(rotation(0.1, -0.15, 0.5)[r][c] * (vx, vy, vz)[c] for c in range(3))
+             for r in range(3)]
+    assert world == pytest.approx([0.4, 0.3, 0.0])
+    assert (wx, wy) == pytest.approx((-0.2, 0.3))

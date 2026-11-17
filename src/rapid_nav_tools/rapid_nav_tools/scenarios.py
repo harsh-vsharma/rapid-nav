@@ -12,7 +12,9 @@ from rapid_nav_tools.checks import (
 )
 
 
-MASS_KG = 30.0
+MASS_KG = 1000.0
+TILT_INERTIA = 1.0e5
+TILT_GAIN = 2.0
 FLOOR_CLEARANCE_M = 0.02
 
 SHAPES = {
@@ -52,6 +54,27 @@ def inertia(shape, mass=MASS_KG):
             mass * (sx * sx + sy * sy) / 12.0)
 
 
+def body_command(world_vx, world_vy, roll, pitch, yaw):
+    """
+    Return (vx, vy, vz, wx, wy, wz): the body-frame command for a horizontal world velocity.
+
+    The world velocity (world_vx, world_vy, 0) is turned into the body frame with the inverse of
+    the full orientation (roll, pitch, yaw), so a tilted body is never driven into the floor,
+    and the angular command pulls roll, pitch and yaw back to zero.
+    """
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    # R = Rz(yaw) Ry(pitch) Rx(roll); the body velocity is R^T v.
+    r = ((cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr),
+         (sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr),
+         (-sp, cp * sr, cp * cr))
+    v = (world_vx, world_vy, 0.0)
+    body = [sum(r[row][col] * v[row] for row in range(3)) for col in range(3)]
+    return (body[0], body[1], body[2], -TILT_GAIN * roll, -TILT_GAIN * pitch,
+            -TILT_GAIN * wrap_angle(yaw))
+
+
 def _geometry(spec):
     if spec['kind'] == 'cylinder':
         return '<cylinder><radius>{}</radius><length>{}</length></cylinder>'.format(
@@ -63,7 +86,9 @@ def obstacle_sdf(name, shape, gravity=False):
     """Return the SDF of a movable obstacle: a body that follows a velocity command."""
     spec = SHAPES[shape]
     cmd_topic, odom_topic = obstacle_topics(name)
-    ixx, iyy, izz = inertia(shape)
+    # Heavy and hard to tip: a push from the robot must not move or tilt the obstacle.
+    izz = inertia(shape)[2]
+    ixx = iyy = TILT_INERTIA
     colour = '{} {} {} 1'.format(*spec['colour'])
     geometry = _geometry(spec)
     return (
