@@ -1,9 +1,13 @@
 """Tests of rapid_nav_tools.scenarios, with hand-computed values."""
 
 import math
+import os
 import xml.etree.ElementTree as ET
 
+import numpy as np
+from PIL import Image
 import pytest
+from rapid_nav_tools.checks import occupied_cells_xy
 from rapid_nav_tools.scenarios import (
     inertia,
     obstacle_sdf,
@@ -13,6 +17,7 @@ from rapid_nav_tools.scenarios import (
     StartTrigger,
     validate_scenario,
 )
+import yaml
 
 
 def test_sdf_parses_and_has_both_plugins():
@@ -167,3 +172,56 @@ def test_validate_scenario_rejects_duplicate_names_and_accepts_good_ones():
     with pytest.raises(ValueError, match='duplicate'):
         validate_scenario('demo', good)
     validate_scenario('static', {'goals': [{'x': 0, 'y': 0}]})
+
+
+NAVIGATION = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', '..', 'rapid_nav_navigation'))
+NEW_SCENARIOS = ('crossing', 'head_on', 'crowd')
+OUTLINE_RADIUS = {'person': 0.20, 'cart': 0.36}
+
+
+def load_world():
+    """Return (scenarios, occupied cell centres of the arena map)."""
+    with open(os.path.join(NAVIGATION, 'config', 'nav_scenarios.yaml'), encoding='utf-8') as f:
+        scenarios = yaml.safe_load(f)
+    with open(os.path.join(NAVIGATION, 'maps', 'arena.yaml'), encoding='utf-8') as f:
+        meta = yaml.safe_load(f)
+    pixels = np.asarray(Image.open(os.path.join(NAVIGATION, 'maps', meta['image'])))
+    grid = np.flipud(np.where(pixels < 89, 100, 0).astype(np.int8))
+    cells = occupied_cells_xy(grid, float(meta['resolution']),
+                              (float(meta['origin'][0]), float(meta['origin'][1])))
+    return scenarios, np.asarray(cells)
+
+
+def nearest_cell(cells, x, y):
+    """Return the distance from (x, y) to the nearest occupied cell centre."""
+    return float(np.min(np.hypot(cells[:, 0] - x, cells[:, 1] - y)))
+
+
+def test_every_scenario_validates():
+    scenarios, _ = load_world()
+    for name, scenario in scenarios.items():
+        validate_scenario(name, scenario)
+    assert set(NEW_SCENARIOS) <= set(scenarios)
+
+
+def test_obstacle_paths_keep_clear_of_the_map():
+    scenarios, cells = load_world()
+    for name in NEW_SCENARIOS:
+        for obstacle in scenarios[name]['obstacles']:
+            points = [(p['x'], p['y']) for p in obstacle['path']]
+            if obstacle.get('mode') == 'loop':
+                points.append(points[0])
+            for (x0, y0), (x1, y1) in zip(points[:-1], points[1:]):
+                n = max(int(math.hypot(x1 - x0, y1 - y0) / 0.05), 1)
+                for k in range(n + 1):
+                    x, y = x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n
+                    gap = nearest_cell(cells, x, y) - OUTLINE_RADIUS[obstacle['shape']]
+                    assert gap >= 0.30, (name, obstacle['name'], x, y, gap)
+
+
+def test_new_goals_are_clear_of_the_map():
+    scenarios, cells = load_world()
+    for name in NEW_SCENARIOS:
+        for goal in scenarios[name]['goals']:
+            assert nearest_cell(cells, goal['x'], goal['y']) >= 0.6, (name, goal)
