@@ -307,3 +307,11 @@ def test_moving_speed_ignores_standing_steps():
     xy = [[0.0, 0.0], [0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.0, 0.0]]
     assert moving_speed(times, xy) == pytest.approx(0.5)
     assert moving_speed([0.0, 1.0], [[0, 0], [0, 0]]) == 0.0
+
+
+def test_moving_speed_skips_masked_steps():
+    times = [0.0, 1.0, 2.0, 3.0]
+    xy = [[0.0, 0.0], [0.4, 0.0], [0.6, 0.0], [1.0, 0.0]]
+    # The step 1 -> 2 (pushed, 0.2 m/s) touches a masked sample, so only 0.4 m/s steps count.
+    assert moving_speed(times, xy, mask=[True, True, False, True]) == pytest.approx(0.4)
+    assert moving_speed(times, xy) == pytest.approx(1.0 / 3.0)

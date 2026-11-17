@@ -288,7 +288,7 @@ def validity_rows(scenario_name, scenario, tracks, robot_times, robot_xy, encoun
             if free.any() else 0.0
         add('{} follows its path'.format(name), '{:.3f} m'.format(deviation),
             '<= {} m'.format(CONFORMANCE_M), deviation <= CONFORMANCE_M)
-        speed = moving_speed(times, xy)
+        speed = moving_speed(times, xy, mask=free)
         wanted = float(obstacle['speed'])
         add('{} speed'.format(name), '{:.3f} m/s'.format(speed),
             '{:.2f} m/s +- 10 %'.format(wanted), abs(speed - wanted) <= SPEED_TOLERANCE * wanted)

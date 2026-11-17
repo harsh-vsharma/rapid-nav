@@ -270,14 +270,22 @@ def path_conformance(track_xy, path, mode):
     return float(nearest.max())
 
 
-def moving_speed(times, xy, min_speed=0.05):
-    """Return the mean speed over the steps faster than min_speed (zero when none is)."""
+def moving_speed(times, xy, min_speed=0.05, mask=None):
+    """
+    Return the mean speed over the steps faster than min_speed (zero when none is).
+
+    With a mask (one bool per sample), only the steps whose two ends are both True count, so
+    the samples where something else pushed the track can be left out.
+    """
     t = np.asarray(times, dtype=np.float64).ravel()
     points = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
     if t.size < 2:
         return 0.0
     dt = np.diff(t)
     valid = dt > 0
+    if mask is not None:
+        keep = np.asarray(mask, dtype=bool).ravel()
+        valid &= keep[:-1] & keep[1:]
     speed = np.hypot(np.diff(points[:, 0]), np.diff(points[:, 1]))[valid] / dt[valid]
     moving = speed[speed > min_speed]
     return float(moving.mean()) if moving.size else 0.0
