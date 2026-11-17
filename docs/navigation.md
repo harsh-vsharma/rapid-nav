@@ -295,7 +295,9 @@ was at each goal's closest approach (when it came within 3 m of an obstacle) and
 with rows that judge the scenario, not the controller (PASS or FAIL for every controller): an obstacle with a `start`
 moved more than 0.5 m; each obstacle stayed within 0.10 m of its path (over the samples where it was not in contact
 with the robot); its mean moving speed is within 10 % of the scripted speed; and, for `crossing` and `head_on`, the
-robot came within 1.5 m of the walker during goal 2. The navigation rows of a dynamic scenario are information for every
+robot came within 1.5 m of the walker during goal 2. A further row, "never stalls", fails when an obstacle stands
+still for more than a second although the robot is not near it, it has started, it is not finished and it is away from
+the corners of its path. The navigation rows of a dynamic scenario are information for every
 controller, our DWA included: what the controllers do against moving obstacles is the baseline measured here, and
 nothing was tuned for it. The baseline is Nav2 with the standard lidar obstacle layer: it sees geometry and has no
 notion of what moves, so a moving obstacle leaves a mark in the costmap until the lidar clears it.
