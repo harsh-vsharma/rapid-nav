@@ -223,6 +223,31 @@ def test_obstacle_paths_keep_clear_of_the_map():
                     assert gap >= 0.30, (name, obstacle['name'], x, y, gap)
 
 
+def path_samples(obstacle, step=0.05):
+    """Return points every `step` metres along an obstacle's scripted path."""
+    points = [(p['x'], p['y']) for p in obstacle['path']]
+    if obstacle.get('mode') == 'loop':
+        points.append(points[0])
+    samples = []
+    for (x0, y0), (x1, y1) in zip(points[:-1], points[1:]):
+        n = max(int(math.hypot(x1 - x0, y1 - y0) / step), 1)
+        samples += [(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n) for k in range(n + 1)]
+    return np.asarray(samples)
+
+
+def test_obstacle_paths_never_meet_each_other():
+    scenarios, _ = load_world()
+    for name in NEW_SCENARIOS:
+        obstacles = scenarios[name]['obstacles']
+        for i, first in enumerate(obstacles):
+            for second in obstacles[i + 1:]:
+                a, b = path_samples(first), path_samples(second)
+                centres = np.min(np.hypot(a[:, None, 0] - b[None, :, 0],
+                                          a[:, None, 1] - b[None, :, 1]))
+                gap = centres - OUTLINE_RADIUS[first['shape']] - OUTLINE_RADIUS[second['shape']]
+                assert gap >= 0.15, (name, first['name'], second['name'], gap)
+
+
 def test_new_goals_are_clear_of_the_map():
     scenarios, cells = load_world()
     for name in NEW_SCENARIOS:

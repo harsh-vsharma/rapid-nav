@@ -18,8 +18,10 @@
 # robot's own line the other way at 0.4 m/s. They close at about 0.9 m/s from about 7.7 m apart.
 #
 # crowd: no triggers, everything moves from the start. Two persons patrol back and forth (one
-# along x at y = -0.8, one along y at x = 0.8) and a cart (shape "cart") loops east of x = -3.0, so
-# goal 2 at (-4.0, 1.0) stays outside its loop (0.45 m between outlines).
+# along x at y = -0.9, one along y at x = 0.8 above y = -0.3) and a cart (shape "cart") loops east
+# of x = -3.0, so goal 2 at (-4.0, 1.0) stays outside its loop (0.45 m between outlines). No two
+# obstacle paths come closer than 0.2 m between outlines, so the obstacles never meet each other,
+# whatever their timing.
 #
 # An obstacle's name is unique in its scenario; its path starts where it is spawned; modes are
 # once, back_and_forth and loop. Scenarios with obstacles need obstacle_driver (scenario:= in
@@ -75,6 +77,6 @@ crowd:
     - {x: -4.0, y: 1.0, yaw: 3.1416}   # 2: across the cart's loop
     - {x: 0.0, y: 0.0, yaw: 0.0}
   obstacles:
-    - {name: walker_a, shape: person, path: [{x: -1.0, y: -0.8}, {x: 3.0, y: -0.8}], speed: 0.3, mode: back_and_forth}
-    - {name: walker_b, shape: person, path: [{x: 0.8, y: -1.8}, {x: 0.8, y: 1.8}], speed: 0.5, mode: back_and_forth}
+    - {name: walker_a, shape: person, path: [{x: -0.3, y: -0.9}, {x: 3.0, y: -0.9}], speed: 0.3, mode: back_and_forth}
+    - {name: walker_b, shape: person, path: [{x: 0.8, y: -0.3}, {x: 0.8, y: 1.8}], speed: 0.5, mode: back_and_forth}
     - {name: cart_c, shape: cart, path: [{x: -3.0, y: -0.5}, {x: -1.0, y: -0.5}, {x: -1.0, y: 1.5}, {x: -3.0, y: 1.5}], speed: 0.4, mode: loop}
