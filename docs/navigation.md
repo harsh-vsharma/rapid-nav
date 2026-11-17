@@ -237,16 +237,18 @@ ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa   # native: wi
 Until now every obstacle stood still. The scenarios `crossing`, `head_on` and `crowd` add obstacles that move the same
 way in every run, so that a controller can be scored against things that move.
 
-**The obstacle model.** Two shapes, both movable bodies of 30 kg that never touch the floor: a `person` (a cylinder,
+**The obstacle model.** Two shapes, both movable bodies of 1000 kg with a very large tilt inertia, so a push from the robot moves and tips them as little as possible (the robot is pushed instead, which the ground truth records), that never touch the floor: a `person` (a cylinder,
 radius 0.20 m, 1.70 m high) and a `cart` (a box, 0.60 × 0.40 × 0.90 m). Gazebo's velocity-control system moves a body at
 the velocity it is commanded (in the body's own frame), and the odometry-publisher system publishes its true pose on
 `/model/<name>/odometry` at 30 Hz. Gravity is off for these bodies: with gravity on, a body under velocity control
 tips over and sinks (measured: it fell from 0.87 m to 0.20 m and moved at 0.33 m/s instead of 0.5 m/s), and with
-gravity off it holds its height and its speed to within 0.002 m/s.
+gravity off it holds its height and its speed to within 0.002 m/s. In a contact test the robot drove into a parked person
+at 0.3 m/s for 6 s: the person did not tilt (0.000 rad) and moved 0.1 mm.
 
 **The driver.** `obstacle_driver` (started by `scenario.launch.py`, or by `sim.launch.py scenario:=<name>`) spawns the
 scenario's obstacles at the first point of their paths, and moves each one along its path at its speed, with a small
-term that pulls it back onto the path and a term that holds its heading. It publishes `/scenario/ready` once every
+term that pulls it back onto the path, and it levels the body: the commanded velocity is turned into the body frame
+with the full orientation, and roll, pitch and yaw are pulled back to zero. It publishes `/scenario/ready` once every
 obstacle exists, listens to `/scenario/goal` (which `nav_run` publishes before sending each goal) and to the robot's
 ground truth to start an obstacle, and draws the obstacles for RViz on `/scenario/obstacles`. The obstacles' true poses
 are for scoring and drawing only: nothing in the navigation stack reads them.
@@ -301,33 +303,32 @@ notion of what moves, so a moving obstacle leaves a mark in the costmap until th
 ### Baseline results (S4)
 
 Measured as above in the Docker development image on an Apple M1 (an arm64 virtual machine with 8 CPUs and 4.8 GiB),
-indicative only; times are simulated seconds. One run per row unless marked repeat.
+indicative only; times are simulated seconds. One run per row unless marked repeat. All scenario-validity rows pass in
+every row shown.
 
 | scenario | controller | goals reached (truth) | collisions | min dynamic clearance (m) | closest approach (m) | close encounters | recoveries | mean time per goal (s) |
 |---|---|---|---|---|---|---|---|---|
-| crossing | dwa | 3/3 | 1 | -0.051 | 0.40 | 2 | 6 | 14.7 |
-| crossing | dwa (repeat) | 3/3 | 1 | -0.055 | 0.40 | 3 | 8 | 22.0 |
-| crossing | dwb | 3/3 | 1 | -0.055 | 0.40 | 1 | 1 | 14.2 |
-| crossing | rpp | 3/3 | 0 | 0.174 | 0.62 | 2 | 3 | 14.8 |
-| crowd | dwa | 3/3 | 0 | 0.095 | 0.55 | 1 | 0 | 12.6 |
-| crowd | dwb | 3/3 | 0 | 0.019 | 0.54 | 2 | 0 | 12.8 |
-| crowd | rpp | 3/3 | 3 | -0.060 | 0.39 | 4 | 11 | 18.8 |
-| head_on | dwa | 2/2 | 0 | 0.008 | 0.46 | 1 | 0 | 14.3 |
-| head_on | dwa (repeat) | 1/2 | 5 | -0.441 | 0.01 | 1 | 13 | 23.7 |
-| head_on | dwa (repeat) | 2/2 | 1 | -0.009 | 0.44 | 1 | 4 | 14.3 |
-| head_on | dwb | 2/2 | 0 | 0.022 | 0.47 | 1 | 0 | 15.1 |
-| head_on | rpp | 2/2 | 1 | -0.007 | 0.44 | 1 | 4 | 16.2 |
+| crossing | dwa | 3/3 | 1 | -0.052 | 0.40 | 3 | 6 | 14.5 |
+| crossing | dwa (repeat) | 3/3 | 1 | -0.052 | 0.40 | 2 | 3 | 13.3 |
+| crossing | dwb | 3/3 | 1 | -0.052 | 0.40 | 2 | 1 | 13.9 |
+| crossing | rpp | 3/3 | 0 | 0.158 | 0.61 | 2 | 5 | 15.6 |
+| crowd | dwa | 3/3 | 0 | 0.091 | 0.54 | 2 | 0 | 12.7 |
+| crowd | dwb | 3/3 | 1 | -0.019 | 0.46 | 2 | 1 | 13.1 |
+| crowd | rpp | 3/3 | 3 | -0.058 | 0.39 | 5 | 11 | 18.8 |
+| head_on | dwa | 2/2 | 1 | -0.051 | 0.40 | 1 | 6 | 16.9 |
+| head_on | dwa (repeat) | 2/2 | 0 | 0.077 | 0.53 | 1 | 0 | 17.1 |
+| head_on | dwb | 2/2 | 1 | -0.051 | 0.40 | 1 | 3 | 16.3 |
+| head_on | rpp | 2/2 | 1 | -0.007 | 0.44 | 1 | 6 | 19.0 |
 
 - `crossing`: the walker and the robot meet near (1.5, 0) in every run. Our DWA and DWB each touch the walker once on
-  goal 2 (clearance -0.05 m, 6 to 8 recoveries for DWA); RPP passes at 0.17 m.
-- `head_on`: the walker walks into the robot's line and the robot sidesteps south of it. The closest approach is about
-  0.45 m, with a clearance of about zero. Our DWA's three runs differ: no collision, then a hard collision that pushed
-  the walker off its speed (5 episodes, one goal missed, 13 recoveries), then one touch. DWB passes at 0.02 m, RPP touches
-  once.
-- `crowd`: our DWA and DWB reach every goal without collision (clearances 0.10 m and 0.02 m); RPP collides three times
+  goal 2 (clearance -0.05 m); RPP passes at 0.16 m. The two DWA runs agree on goals, collisions and clearance.
+- `head_on`: the walker walks into the robot's line and the robot sidesteps south of it. The closest approach is
+  0.40 to 0.53 m, with a clearance around zero. Our DWA's two runs differ (one touch, then none, clearance 0.08 m); DWB
+  and RPP each touch once (-0.05 m and -0.01 m).
+- `crowd`: our DWA reaches every goal without collision (0.09 m); DWB touches once (-0.02 m); RPP collides three times
   (11 recoveries) while crossing the cart's loop on goal 2.
-- The repeats show that one run of a head-on pass is not enough to rank controllers: the outcome depends on small
-  differences in timing around a clearance of zero.
+- One run of a pass is not enough to rank controllers: the outcome depends on small differences in timing around a
+  clearance of zero.
 
 ## Tools
 
