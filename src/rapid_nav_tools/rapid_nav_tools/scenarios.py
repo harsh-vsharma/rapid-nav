@@ -328,3 +328,25 @@ def validity_rows(scenario_name, scenario, tracks, robot_times, robot_xy, encoun
             '-' if encounter_m is None else '{:.2f} m'.format(encounter_m),
             '<= {} m'.format(ENCOUNTER_M), encounter_m is not None and encounter_m <= ENCOUNTER_M)
     return rows
+
+
+def covering_radius(shape):
+    """Return the radius of the circle around the outline (box: half the diagonal)."""
+    spec = SHAPES[shape]
+    if spec['kind'] == 'cylinder':
+        return spec['radius']
+    return 0.5 * math.hypot(spec['size'][0], spec['size'][1])
+
+
+def world_velocity(orientation_xyzw, body_linear_xyz):
+    """Return (vx, vy) in the world frame of a body-frame velocity (full orientation)."""
+    x, y, z, w = orientation_xyzw
+    n = math.sqrt(x * x + y * y + z * z + w * w)
+    if n == 0.0:
+        raise ValueError('zero quaternion')
+    x, y, z, w = x / n, y / n, z / n, w / n
+    vx, vy, vz = body_linear_xyz
+    row0 = (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w))
+    row1 = (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w))
+    return (row0[0] * vx + row0[1] * vy + row0[2] * vz,
+            row1[0] * vx + row1[1] * vy + row1[2] * vz)
