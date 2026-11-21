@@ -3,7 +3,7 @@
 <package format="3">
   <name>rapid_nav_tools</name>
   <version>0.1.0</version>
-  <description>sim_check: one command that checks the RAPID-NAV simulation (topic rates, sensor content, TF, a scripted drive against ground truth) and writes a bundle.</description>
+  <description>sim_check and planner_check: commands that check the RAPID-NAV simulation and the global planners and write a bundle; path_viewer shows the planners' paths in RViz.</description>
   <maintainer email="harsh.v.sharma@outlook.com">Harsh Vardhan</maintainer>
   <license>MIT</license>
 
@@ -15,6 +15,16 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <!-- nav_run reads the scenarios and the map of rapid_nav_navigation at run time. That package
+       depends on this one, so it is not listed here. -->
+
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>rosgraph_msgs</exec_depend>
   <exec_depend>tf2_ros_py</exec_depend>

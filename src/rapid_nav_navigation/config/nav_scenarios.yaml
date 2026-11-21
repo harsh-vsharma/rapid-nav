@@ -1,0 +1,82 @@
+# Scenarios of nav_run. Each goal is a pose in the map frame: x and y in metres, yaw in radians.
+#
+# tour: from the spawn pose (0, 0, 0), six goals in order; each goal starts from the one before it.
+# Every goal is at least 0.5 m from any occupied cell of the arena map (checked: the nearest is
+# 0.80 m away), so none needed moving.
+#
+# unmapped: two boxes that are not in the map are spawned into the world first, then three goals
+# from the spawn pose. Box 1 lies on the straight line to the first goal; box 2 lies 0.41 m off the
+# straight line to the second goal. The robot must find them with its lidar and local costmap.
+#
+# crossing: a person (shape "person") crosses the robot's line from the south while the robot
+# drives from the staging goal to goal 2. The walker waits at (1.5, -2.0); it starts when goal 2
+# is sent and the robot is within 2.2 m of (1.5, 0.0), walks north at 0.5 m/s and stops at y = 0.8
+# (0.31 m from crate_1, 0.35 m from the robot's return line). It needs 4 s to reach y = 0, the
+# robot about 4.4 s to cover 2.2 m, so they meet near (1.5, 0). Goal 3 passes the parked walker.
+#
+# head_on: staging goal first; then the walker leaves (4.2, 0.0) when goal 2 is sent and walks the
+# robot's own line the other way at 0.4 m/s. They close at about 0.9 m/s from about 7.7 m apart.
+#
+# crowd: no triggers, everything moves from the start. Two persons patrol back and forth (one
+# along x at y = -0.9, one along y at x = 0.8 above y = -0.3) and a cart (shape "cart") loops east
+# of x = -3.0, so goal 2 at (-4.0, 1.0) stays outside its loop (0.45 m between outlines). No two
+# obstacle paths come closer than 0.2 m between outlines, so the obstacles never meet each other,
+# whatever their timing.
+#
+# An obstacle's name is unique in its scenario; its path starts where it is spawned; modes are
+# once, back_and_forth and loop. Scenarios with obstacles need obstacle_driver (scenario:= in
+# sim.launch.py).
+
+tour:
+  goals:
+    - {x: 3.5, y: 0.0, yaw: 0.0}
+    - {x: 3.5, y: 2.8, yaw: 1.5708}
+    - {x: -1.0, y: 3.2, yaw: 3.1416}
+    - {x: -4.0, y: 0.0, yaw: -1.5708}
+    - {x: -1.0, y: -3.0, yaw: 0.0}
+    - {x: 0.0, y: 0.0, yaw: 0.0}
+
+unmapped:
+  box_size: 0.5
+  boxes:
+    - {name: unmapped_box_1, x: 1.5, y: 0.0}
+    - {name: unmapped_box_2, x: -2.0, y: 1.0}
+  goals:
+    - {x: 3.5, y: 0.0, yaw: 0.0}
+    - {x: -3.5, y: 1.0, yaw: 3.1416}
+    - {x: 0.0, y: 0.0, yaw: 0.0}
+
+crossing:
+  goals:
+    - {x: -3.5, y: 0.0, yaw: 0.0}      # 1: staging, nothing moves yet
+    - {x: 3.5, y: 0.0, yaw: 0.0}       # 2: the encounter
+    - {x: 0.0, y: 0.0, yaw: 3.1416}    # 3: back past the parked walker
+  obstacles:
+    - name: walker_1
+      shape: person
+      path: [{x: 1.5, y: -2.0}, {x: 1.5, y: 0.8}]
+      speed: 0.5
+      mode: once
+      start: {goal: 2, robot_within: 2.2, of: {x: 1.5, y: 0.0}}
+
+head_on:
+  goals:
+    - {x: -3.5, y: 0.0, yaw: 0.0}      # 1: staging
+    - {x: 3.5, y: 0.0, yaw: 0.0}       # 2: the walker comes the other way on the same line
+  obstacles:
+    - name: walker_1
+      shape: person
+      path: [{x: 4.2, y: 0.0}, {x: -4.2, y: 0.0}]
+      speed: 0.4
+      mode: once
+      start: {goal: 2}
+
+crowd:
+  goals:
+    - {x: 3.5, y: 0.0, yaw: 0.0}
+    - {x: -4.0, y: 1.0, yaw: 3.1416}   # 2: across the cart's loop
+    - {x: 0.0, y: 0.0, yaw: 0.0}
+  obstacles:
+    - {name: walker_a, shape: person, path: [{x: -0.3, y: -0.9}, {x: 3.0, y: -0.9}], speed: 0.3, mode: back_and_forth}
+    - {name: walker_b, shape: person, path: [{x: 0.8, y: -0.3}, {x: 0.8, y: 1.8}], speed: 0.5, mode: back_and_forth}
+    - {name: cart_c, shape: cart, path: [{x: -3.0, y: -0.5}, {x: -1.0, y: -0.5}, {x: -1.0, y: 1.5}, {x: -3.0, y: 1.5}], speed: 0.4, mode: loop}

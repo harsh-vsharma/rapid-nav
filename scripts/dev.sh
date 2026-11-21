@@ -27,6 +27,14 @@ usage: scripts/dev.sh <command>
   perception-smoke [backend] [args]
                   headless simulation with the flow node (backend default raft_small) + perception_check;
                   the bundle goes to perception_check_docker_<backend>_<time>/
+  planner-smoke [arena|maze] [--sim]
+                  planning stack + planner_check; offline (static localisation) on the map, or with
+                  --sim the simulation with AMCL (arena only); the bundle goes to
+                  planner_check_docker_<map>_<time>/
+  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>
+                  navigation stack in the simulation + nav_run (goal runs scored on ground truth,
+                  against the moving obstacles of the crossing, head_on and crowd scenarios);
+                  the bundle goes to nav_run_<scenario>_<controller>_<time>/
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -54,7 +62,9 @@ case "${1:-}" in
         ;;
     build)
         shift
-        in_container "colcon build --base-paths /repo/src --build-base /ws/build --install-base /ws/install --event-handlers console_cohesion+$(quoted ${1+"$@"})"
+        # At most two compile jobs: a C++ translation unit that includes the Nav2 headers takes about 1 GB, and the
+        # Docker VM has about 4.8 GiB, so more jobs risk running out of memory.
+        in_container "MAKEFLAGS=-j2 colcon build --base-paths /repo/src --build-base /ws/build --install-base /ws/install --parallel-workers 2 --event-handlers console_cohesion+$(quoted ${1+"$@"})"
         ;;
     test)
         # Show the test results even when some test fails, then exit with colcon test's code.
@@ -98,6 +108,62 @@ case "${1:-}" in
         # exit with the check's code.
         perception_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false perception:=true flow_backend:=$backend > /ws/perception_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools perception_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/perception_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$perception_cmd"
+        ;;
+    planner-smoke)
+        shift
+        map=arena
+        sim=0
+        for arg in ${1+"$@"}; do
+            case "$arg" in
+                arena|maze) map="$arg" ;;
+                --sim) sim=1 ;;
+                *) echo "planner-smoke: unknown argument $arg" >&2; exit 2 ;;
+            esac
+        done
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        if [ "$sim" -eq 1 ]; then
+            if [ "$map" != arena ]; then
+                echo "planner-smoke: --sim runs the arena simulation only" >&2
+                exit 2
+            fi
+            bundle="/repo/planner_check_docker_arena_$stamp"
+            launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false planning:=true"
+            check_cmd="ros2 run rapid_nav_tools planner_check --mode sim --map arena --profile docker --out $bundle"
+        else
+            bundle="/repo/planner_check_docker_${map}_$stamp"
+            launch_cmd="ros2 launch rapid_nav_navigation planning.launch.py localization:=static use_sim_time:=false map:=$map"
+            check_cmd="ros2 run rapid_nav_tools planner_check --mode offline --map $map --profile docker --out $bundle"
+        fi
+        # Start the planning stack in the background, run planner_check (it waits for the planner server
+        # and the map), copy the launch log into the bundle, stop the stack and exit with planner_check's code.
+        smoke_cmd="mkdir -p $bundle; $launch_cmd > /ws/planner_launch.log 2>&1 & launch_pid=\$!; $check_cmd; rc=\$?; kill -INT \$launch_pid 2>/dev/null; sleep 10; cp /ws/planner_launch.log $bundle/; exit \$rc"
+        in_container "$smoke_cmd"
+        ;;
+    nav-smoke)
+        shift
+        if [ "$#" -ne 2 ]; then
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>" >&2
+            exit 2
+        fi
+        scenario="$1"
+        controller="$2"
+        case "$scenario" in
+            tour|unmapped|crossing|head_on|crowd) ;;
+            *) echo "nav-smoke: unknown scenario $scenario" >&2; exit 2 ;;
+        esac
+        case "$controller" in
+            dwa|dwb|rpp) ;;
+            *) echo "nav-smoke: unknown controller $controller" >&2; exit 2 ;;
+        esac
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        bundle="/repo/nav_run_${scenario}_${controller}_$stamp"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario"
+        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --profile docker --out $bundle"
+        # Start the navigation stack in the background, run nav_run (it waits for the clock and the
+        # navigation action server), copy the launch log into the bundle, stop the stack and exit
+        # with nav_run's code.
+        smoke_cmd="mkdir -p $bundle; $launch_cmd > /ws/nav_launch.log 2>&1 & launch_pid=\$!; $check_cmd; rc=\$?; kill -INT \$launch_pid 2>/dev/null; sleep 10; cp /ws/nav_launch.log $bundle/; exit \$rc"
+        in_container "$smoke_cmd"
         ;;
     shell)
         docker run --rm -it -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \

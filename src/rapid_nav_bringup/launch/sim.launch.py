@@ -10,6 +10,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 ODOM_TF_MODES = ('ekf', 'wheel')
+CONTROLLERS = ('dwa', 'dwb', 'rpp')
 
 
 def generate_launch_description():
@@ -40,6 +41,28 @@ def generate_launch_description():
         DeclareLaunchArgument('x', default_value='0.0', description='Spawn x position (m).'),
         DeclareLaunchArgument('y', default_value='0.0', description='Spawn y position (m).'),
         DeclareLaunchArgument('yaw', default_value='0.0', description='Spawn heading (rad).'),
+        DeclareLaunchArgument(
+            'planning',
+            default_value='false',
+            description='Start the planning stack: AMCL on the arena map, the planner servers.',
+        ),
+        DeclareLaunchArgument(
+            'navigation',
+            default_value='false',
+            description='Start the navigation stack (planning, controller, behaviour and BT '
+                        'navigator); the goals go to "2D Goal Pose" in RViz.',
+        ),
+        DeclareLaunchArgument(
+            'controller',
+            default_value='dwa',
+            description="Controller of the navigation stack: 'dwa' (ours), 'dwb' or 'rpp'.",
+        ),
+        DeclareLaunchArgument(
+            'scenario',
+            default_value='',
+            description='Scenario of nav_scenarios.yaml whose moving obstacles to start '
+                        '(empty: none).',
+        ),
         DeclareLaunchArgument(
             'perception',
             default_value='false',
@@ -89,6 +112,50 @@ def launch_setup(context):
         ],
     )
     nodes = [gazebo]
+    planning = LaunchConfiguration('planning').perform(context).strip().lower() == 'true'
+    navigation = LaunchConfiguration('navigation').perform(context).strip().lower() == 'true'
+    controller = LaunchConfiguration('controller').perform(context).strip().lower()
+    if planning and navigation:
+        raise RuntimeError(
+            'navigation:=true already starts the planning stack; do not pass planning:=true too'
+        )
+    if controller not in CONTROLLERS:
+        raise RuntimeError(
+            "controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller)
+        )
+    if navigation:
+        navigation_launch = os.path.join(
+            get_package_share_directory('rapid_nav_navigation'), 'launch', 'navigation.launch.py')
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(navigation_launch),
+            launch_arguments=[
+                ('controller', controller),
+                ('use_sim_time', 'true'),
+                ('x', x),
+                ('y', y),
+                ('yaw', yaw),
+            ],
+        ))
+    if planning:
+        planning_launch = os.path.join(
+            get_package_share_directory('rapid_nav_navigation'), 'launch', 'planning.launch.py')
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(planning_launch),
+            launch_arguments=[
+                ('localization', 'amcl'),
+                ('use_sim_time', 'true'),
+                ('x', x),
+                ('y', y),
+                ('yaw', yaw),
+            ],
+        ))
+
+    scenario = LaunchConfiguration('scenario').perform(context).strip()
+    if scenario:
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'scenario.launch.py')),
+            launch_arguments=[('scenario', scenario)],
+        ))
 
     if odom_tf == 'ekf':
         nodes.append(Node(
@@ -122,13 +189,17 @@ def launch_setup(context):
             ],
         ))
 
+    rviz_config = os.path.join(share, 'rviz', 'sim.rviz')
+    if planning or navigation:
+        rviz_config = os.path.join(
+            get_package_share_directory('rapid_nav_navigation'), 'rviz', 'navigation.rviz')
     if rviz and not headless:
         nodes.append(Node(
             package='rviz2',
             executable='rviz2',
             name='rviz2',
             output='screen',
-            arguments=['-d', os.path.join(share, 'rviz', 'sim.rviz')],
+            arguments=['-d', rviz_config],
             parameters=[{'use_sim_time': True}],
         ))
     return nodes

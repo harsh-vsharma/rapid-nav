@@ -2,7 +2,7 @@
 
 *Reliability-Aware Perception for Intelligent Dynamic Navigation*
 
-[![ci](https://github.com/code-master-harsh/rapid-nav/actions/workflows/ci.yml/badge.svg)](https://github.com/code-master-harsh/rapid-nav/actions/workflows/ci.yml)
+[![ci](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml/badge.svg)](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml)
 
 A differential-drive mobile robot in Gazebo that uses optical flow to see which things move. Fast flow (FlowNetS) is
 used by default, and accurate flow (RAFT) is used when a reliability check fails. The robot's own motion is removed
@@ -12,18 +12,21 @@ A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT
 
 ## Status
 
-The robot, the simulation and the optical flow are built and in testing; the other parts are planned.
+The robot, the simulation, the optical flow, the global planning (localisation on the map, the planner server with
+our planners), the local control (Nav2's controller and behaviour servers, with our dynamic window controller) and the
+moving obstacles with their scenarios are in testing; the other parts are planned.
 
 | Part | Stage | Status |
 |---|---|---|
 | Robot and simulation | S1 | in testing |
 | Perception | S2 | in testing |
 | Ego-motion compensation | S3 | planned |
-| Dynamic scenarios | S4 | planned |
-| Navigation baseline | S5 | planned |
-| Hazard costmap | S6 | planned |
-| Adaptive flow | S7 | planned |
-| Experiments | S8 | planned |
+| Dynamic scenarios: moving obstacles and the geometry baseline | S4 | in testing |
+| Navigation baseline: global planning | S5 | in testing |
+| Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
+| Hazard map to costmap | S7 | planned |
+| Adaptive flow | S8 | planned |
+| Experiments | S9 | planned |
 
 ## Pipeline
 
@@ -46,7 +49,9 @@ See [docs/architecture.md](docs/architecture.md) for the design.
 
 ## Repository layout
 
-- `src/`: ROS 2 packages: the robot description, the Gazebo arena and bridge, the launch files and the `sim_check` tool.
+- `src/`: ROS 2 packages: the robot description, the Gazebo arena and bridge, the launch files, the `sim_check` tool,
+  the maps and the navigation launch, our planner (`rapid_nav_planner`) and the planner checks (`planner_check`), our
+  controller (`rapid_nav_controller`), and the tools (`rapid_nav_tools`): the checks, the path viewer and `nav_run`.
 - `prototypes/`: reference code, not built.
 - `docs/`: setup, development and architecture notes.
 - `docker/`: optional build-and-test image for machines without a native ROS 2 install.
@@ -64,7 +69,7 @@ The full steps are in [docs/setup.md](docs/setup.md).
 
 ```bash
 mkdir -p ~/ros_ws && cd ~/ros_ws
-git clone https://github.com/code-master-harsh/rapid-nav.git
+git clone https://github.com/harsh-vsharma/rapid-nav.git
 cd rapid-nav
 sudo rosdep init   # only once per machine; skip if it says it is already initialised
 rosdep update
@@ -90,6 +95,37 @@ Run the automatic check, in a third terminal (the robot drives by itself, so kee
 ```bash
 ros2 run rapid_nav_tools sim_check
 ```
+
+Start the simulation with the global planning stack (the map, AMCL localisation and the seven planners, with RViz paths
+for each goal you click with "2D Goal Pose"):
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py planning:=true
+```
+
+Start the navigation stack (the planning stack, Nav2's controller, behaviour and BT navigator servers, and our DWA
+controller; `controller:=dwb` or `controller:=rpp` chooses the others). Click a goal with "2D Goal Pose" in RViz:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+```
+
+With the stack running, run a goal scenario and score it on the simulator's ground truth, in a second terminal:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa
+```
+
+Add moving obstacles (a person who crosses the robot's path, one who comes head-on, a small crowd) with the `scenario:=`
+argument (`crossing`, `head_on` or `crowd`), then run the same scenario:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
+```
+
+The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
+steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10, 11 and 12).
 
 Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is installed; see
 [docs/perception.md](docs/perception.md)):

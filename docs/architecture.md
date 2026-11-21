@@ -60,3 +60,39 @@ odom → base_footprint → base_link → { camera_link → camera_optical_frame
 
 `odom → base_footprint` comes from one publisher only: the robot_localization EKF by default, or the simulator's
 differential-drive transform with `odom_tf:=wheel`. The `map` frame is added with localisation in S5.
+
+## Navigation
+
+The global side is built in S5 (details in [navigation.md](navigation.md)):
+
+- **Map.** Two occupancy maps (the arena and a maze) are generated from the arena's geometry and a fixed maze and
+  served by `map_server`.
+- **Localisation.** AMCL, on the laser scan, publishes `map → odom`; `odom → base_footprint` is unchanged.
+- **Global costmap.** The static map, inflated by the robot radius (0.25 m) out to 0.55 m.
+- **Planner server.** Nav2's planner server with seven planners selected by `planner_id`: our four (A*, A* with
+  smoothing, Dijkstra and Theta*, one plugin, `rapid_nav_planner/GridPlanner`) and three from Nav2 for comparison.
+
+The local side (S6, details in [navigation.md](navigation.md)):
+
+- **Local costmap.** Rolling, 4 × 4 m in `odom`, from the lidar, with the inflation layer.
+- **Controller server.** One controller under the id `FollowPath`, chosen at launch: our dynamic window approach
+  (`rapid_nav_controller::DwaController`, the library `dwa_core` has no ROS dependency), Nav2's DWB, or Regulated Pure
+  Pursuit. The velocity commands go to `/cmd_vel` as `Twist`, the message the simulation's bridge takes.
+- **Behaviour server.** Spin, back up, drive on heading and wait, used by the recovery branch of the tree.
+- **BT navigator.** `navigate_rapid.xml` (a copy of Nav2's tree, with our planner as the default) runs each goal:
+  replanning once a second, following the path, and recovering.
+- **Goal runs.** `nav_run` sends the scenario's goals and scores them on the simulator's ground truth, not on the wheel
+  odometry.
+
+The simulation side of the moving obstacles (S4, details in [navigation.md](navigation.md)):
+
+- **Obstacles.** Movable bodies (a person cylinder, a cart box) spawned into the arena by `obstacle_driver`. Gazebo's
+  velocity-control system moves each at the commanded velocity, and its odometry-publisher system publishes the true
+  pose; `ros_gz_bridge` carries both topics (`/model/<name>/cmd_vel`, `/model/<name>/odometry`).
+- **Driver.** `obstacle_driver` follows each obstacle's scripted path, starts it when `nav_run` announces its goal on
+  `/scenario/goal` (and the robot is close enough, when the scenario says so), and publishes `/scenario/ready` and the
+  RViz markers `/scenario/obstacles`.
+- **Ground truth only for scoring.** The obstacles' true poses are read by `nav_run` and RViz, never by the navigation
+  stack: the stack sees them as lidar geometry, which is the baseline.
+
+The hazard layer (velocity-aware cells from the flow) arrives in S7.

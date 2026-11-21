@@ -7,13 +7,28 @@ import pytest
 
 from rapid_nav_tools.checks import (
     angle_diff,
+    body_clearance,
+    clearances,
+    collision_episodes,
     colourise_depth,
+    dynamic_clearance,
     expected_fx,
+    heading_change_per_metre,
+    interpolate_track,
+    longest_stall,
+    max_step,
+    moving_speed,
+    occupied_cells_xy,
+    path_conformance,
+    path_length,
     planar_delta,
     predicted_turn_flow_u,
     quaternion_from_rpy,
     rate_verdict,
     scan_image,
+    tracking_error,
+    tracking_error_in_force,
+    travelled_length,
     yaw_from_quaternion,
 )
 
@@ -190,3 +205,214 @@ def test_turn_flow_lever_adds_depth_dependent_flow():
     rotation = 231.0 * math.tan(0.05)
     assert far == pytest.approx(rotation, rel=0.01)
     assert near - rotation == pytest.approx(231.0 * 0.175 * 0.05 / 1.0, rel=0.05)
+
+
+def test_path_length_of_an_l_shape():
+    """A path of 3 m east then 4 m north is 7 m long; fewer than two points have no length."""
+    assert path_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
+    assert path_length([(1.0, 1.0)]) == 0.0
+    assert path_length([]) == 0.0
+
+
+def test_max_step_is_the_longest_gap():
+    """The longest gap of a path with a diagonal 5 m step is 5 m."""
+    assert max_step([(0.0, 0.0), (1.0, 0.0), (4.0, 4.0)]) == pytest.approx(5.0)
+    assert max_step([(0.0, 0.0)]) == 0.0
+
+
+def test_heading_change_of_two_right_turns_is_sixty_degrees_per_metre():
+    """Two 90 degree turns over 3 m of path are 180 degrees in total: 60 degrees per metre."""
+    corner = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    assert heading_change_per_metre(corner) == pytest.approx(60.0)
+
+
+def test_heading_change_of_a_straight_line_is_zero():
+    """Collinear points turn by nothing, and repeated points are ignored."""
+    assert heading_change_per_metre([(0.0, 0.0), (1.0, 1.0), (1.0, 1.0), (2.0, 2.0)]) == 0.0
+    assert heading_change_per_metre([(0.0, 0.0)]) == 0.0
+
+
+def test_heading_change_wraps_a_turn_past_pi():
+    """A turn from heading 170 to heading -170 degrees is 20 degrees, not 340."""
+    a = math.radians(170.0)
+    b = math.radians(-170.0)
+    points = [(0.0, 0.0), (math.cos(a), math.sin(a)), (math.cos(a) + math.cos(b),
+                                                       math.sin(a) + math.sin(b))]
+    assert heading_change_per_metre(points) == pytest.approx(20.0 / 2.0, abs=1e-6)
+
+
+def test_clearances_match_a_brute_force_search():
+    """Chunked clearances equal the brute-force distance to the nearest occupied centre."""
+    rng = np.random.default_rng(3)
+    points = rng.uniform(-2.0, 2.0, size=(300, 2))
+    occupied = rng.uniform(-2.0, 2.0, size=(40, 2))
+    expected = np.array([np.min(np.hypot(*(occupied - p).T)) for p in points])
+    assert clearances(points, occupied, chunk=64) == pytest.approx(expected)
+
+
+def test_clearances_are_infinite_without_obstacles():
+    """With no occupied cell the clearance of every point is infinite."""
+    result = clearances([(0.0, 0.0), (1.0, 1.0)], np.zeros((0, 2)))
+    assert np.all(np.isinf(result))
+
+
+def test_occupied_cells_xy_places_cell_centres_in_metres():
+    """Row 0 is the map's bottom row: row 1, column 2 has its centre at (0.125, 0.075)."""
+    grid = np.zeros((3, 4), dtype=np.int8)
+    grid[1, 2] = 100
+    grid[0, 0] = -1
+    centres = occupied_cells_xy(grid, 0.05, (0.0, 0.0))
+    assert centres.shape == (1, 2)
+    assert centres[0] == pytest.approx([0.125, 0.075])
+    assert occupied_cells_xy(np.zeros((2, 2)), 0.05, (0.0, 0.0)).shape == (0, 2)
+
+
+def test_body_clearance_of_a_cell_and_an_overlap():
+    """
+    Check the clearance to a cell, and an overlap, of a robot of radius 0.25 by hand.
+
+    A cell of side 0.1 at (1, 0): the centre at the origin is 0.95 m from the cell's near edge, a
+    clearance of 0.70 m; at x = 0.8 the centre is 0.15 m from the edge, an overlap of -0.10 m.
+    """
+    cells = np.array([[1.0, 0.0]])
+    result = body_clearance([(0.0, 0.0), (0.8, 0.0)], cells, np.zeros((0, 3)), 0.25, cell=0.1)
+    assert result == pytest.approx([0.70, -0.10])
+
+
+def test_body_clearance_counts_extra_boxes_and_is_infinite_without_obstacles():
+    """A box of half side 0.25 at (-2, 1) is 0.75 m from (-2, 0): a clearance of 0.5 m."""
+    result = body_clearance([(-2.0, 0.0)], np.zeros((0, 2)), [(-2.0, 1.0, 0.25)], 0.25)
+    assert result == pytest.approx([0.5])
+    empty = body_clearance([(0.0, 0.0)], np.zeros((0, 2)), np.zeros((0, 3)), 0.25)
+    assert np.all(np.isinf(empty))
+
+
+def test_collision_episodes_count_entries_not_samples():
+    """Two entries below zero in the first list; a start below zero is one entry."""
+    assert collision_episodes([1.0, -0.1, -0.2, 0.5, -0.3]) == 2
+    assert collision_episodes([-1.0, -2.0]) == 1
+    assert collision_episodes([0.2, 0.1]) == 0
+
+
+def test_tracking_error_is_the_mean_distance_to_the_nearest_path_point():
+    """
+    Check the tracking error to the nearest path point by hand.
+
+    The path has points at x = 0, 0.5 and 1. The point (0.5, 0.2) is 0.2 m from (0.5, 0); the point
+    (1.0, 0.5) is 0.5 m from (1, 0): a mean of 0.35 m. With no path the error is not a number.
+    """
+    path = [(0.0, 0.0), (0.5, 0.0), (1.0, 0.0)]
+    assert tracking_error([(0.5, 0.2), (1.0, 0.5)], path) == pytest.approx(0.35)
+    assert math.isnan(tracking_error([(0.5, 0.2)], []))
+
+
+def test_tracking_error_in_force_uses_the_plan_published_last_before_each_point():
+    """
+    Check the tracking error to the plan in force, with two plans.
+
+    One plan lies along y = 0 from t = 0, the other along y = 1 from t = 1. The point (0.5, 0.2) at
+    t = 0.5 is 0.2 m from the first; the point (0.5, 1.3) at t = 1.5 is 0.3 m from the second: a
+    mean of 0.25 m. The point at t = -1, before any plan, is skipped.
+    """
+    plans = [[(0.0, 0.0), (0.5, 0.0), (1.0, 0.0)], [(0.0, 1.0), (0.5, 1.0), (1.0, 1.0)]]
+    points = [(0.5, 0.2), (0.5, 1.3), (0.5, 5.0)]
+    times = [0.5, 1.5, -1.0]
+    result = tracking_error_in_force(points, times, [0.0, 1.0], plans)
+    assert result == pytest.approx(0.25)
+    assert math.isnan(tracking_error_in_force(points, times, [], []))
+
+
+def test_travelled_length_follows_the_positions():
+    """Three metres east then four north is seven metres of travel."""
+    assert travelled_length([(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)]) == pytest.approx(7.0)
+
+
+def test_interpolate_track_is_linear_and_held_outside():
+    at = interpolate_track([0.0, 2.0], [[0.0, 0.0], [2.0, 4.0]], [-1.0, 0.5, 1.0, 3.0])
+    assert at.tolist() == [[0.0, 0.0], [0.5, 1.0], [1.0, 2.0], [2.0, 4.0]]
+
+
+def test_dynamic_clearance_circle_and_box():
+    robot = [[0.0, 0.0], [0.0, 0.0]]
+    tracks = [
+        {'name': 'p', 'times': [0.0, 1.0], 'xy': [[2.0, 0.0], [1.0, 0.0]], 'kind': 'circle',
+         'radius': 0.2},
+        {'name': 'c', 'times': [0.0, 1.0], 'xy': [[0.0, 3.0], [0.0, 3.0]], 'kind': 'box',
+         'half_x': 0.3, 'half_y': 0.2},
+    ]
+    per_sample, per_obstacle = dynamic_clearance(robot, [0.0, 1.0], tracks, 0.25)
+    # circle: 2.0 - 0.2 - 0.25 = 1.55 then 1.0 - 0.45 = 0.55; box: 3.0 - 0.2 - 0.25 = 2.55
+    assert per_sample.tolist() == pytest.approx([1.55, 0.55])
+    assert per_obstacle == pytest.approx({'p': 0.55, 'c': 2.55})
+    none, empty = dynamic_clearance(robot, [0.0, 1.0], [], 0.25)
+    assert np.isinf(none).all() and empty == {}
+
+
+def test_dynamic_clearance_box_corner_and_overlap():
+    tracks = [{'name': 'c', 'times': [0.0], 'xy': [[1.0, 1.0]], 'kind': 'box',
+               'half_x': 0.5, 'half_y': 0.5}]
+    corner, _ = dynamic_clearance([[0.0, 0.0]], [0.0], tracks, 0.25)
+    assert corner[0] == pytest.approx(math.hypot(0.5, 0.5) - 0.25)
+    inside, _ = dynamic_clearance([[1.0, 1.0]], [0.0], tracks, 0.25)
+    assert inside[0] == pytest.approx(-0.25)
+
+
+def test_path_conformance_offset_and_loop():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 4.0, 'y': 0.0}]
+    assert path_conformance([[1.0, 0.03], [2.0, -0.01]], path, 'once') == pytest.approx(0.03)
+    assert path_conformance([[5.0, 0.0]], path, 'once') == pytest.approx(1.0)
+    square = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}, {'x': 2.0, 'y': 2.0}]
+    # the closing segment runs from (2, 2) back to (0, 0): (1, 1) is on it only for a loop
+    assert path_conformance([[1.0, 1.0]], square, 'loop') == pytest.approx(0.0)
+    assert path_conformance([[1.0, 1.0]], square, 'once') == pytest.approx(1.0)
+
+
+def test_moving_speed_ignores_standing_steps():
+    times = [0.0, 1.0, 2.0, 3.0, 4.0]
+    xy = [[0.0, 0.0], [0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.0, 0.0]]
+    assert moving_speed(times, xy) == pytest.approx(0.5)
+    assert moving_speed([0.0, 1.0], [[0, 0], [0, 0]]) == 0.0
+
+
+def test_moving_speed_skips_masked_steps():
+    times = [0.0, 1.0, 2.0, 3.0]
+    xy = [[0.0, 0.0], [0.4, 0.0], [0.6, 0.0], [1.0, 0.0]]
+    # The step 1 -> 2 (pushed, 0.2 m/s) touches a masked sample, so only 0.4 m/s steps count.
+    assert moving_speed(times, xy, mask=[True, True, False, True]) == pytest.approx(0.4)
+    assert moving_speed(times, xy) == pytest.approx(1.0 / 3.0)
+
+
+def straight_track(stuck_from, stuck_to, seconds=12.0, speed=0.5):
+    times = [k * 0.1 for k in range(int(seconds / 0.1) + 1)]
+    xy, x = [], 0.0
+    for t in times:
+        if not stuck_from <= t < stuck_to:
+            x += speed * 0.1
+        xy.append([x, 0.0])
+    return times, xy
+
+
+def test_longest_stall_finds_a_stuck_free_obstacle():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    gap = [5.0] * 121
+    times, xy = straight_track(4.0, 8.0)
+    # stuck for 4 s: the stalled windows start from about 3.6 s to 7.4 s and cover about 4.8 s
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == pytest.approx(4.8, abs=0.3)
+    times, xy = straight_track(99.0, 100.0)
+    assert longest_stall(times, xy, gap, 0.5, path, 'once') == 0.0
+
+
+def test_longest_stall_ignores_contact_start_vertices_and_the_end():
+    path = [{'x': 0.0, 'y': 0.0}, {'x': 20.0, 'y': 0.0}]
+    times, xy = straight_track(4.0, 8.0)
+    # the robot is near the whole time: nothing counts
+    assert longest_stall(times, xy, [0.1] * 121, 0.5, path, 'once') == 0.0
+    # waiting at a vertex (a reversal) is not a stall
+    vertices = [{'x': 0.0, 'y': 0.0}, {'x': 3.0, 'y': 0.0}]
+    at_vertex = [[min(0.5 * 0.1 * k, 3.0), 0.0] for k in range(121)]
+    assert longest_stall(times, at_vertex, [5.0] * 121, 0.5, vertices, 'back_and_forth') == 0.0
+    # finished at the end of a 'once' path
+    short = [{'x': 0.0, 'y': 0.0}, {'x': 2.0, 'y': 0.0}]
+    times2, xy2 = straight_track(100.0, 101.0, seconds=10.0)
+    xy2 = [[min(p[0], 2.0), 0.0] for p in xy2]
+    assert longest_stall(times2, xy2, [5.0] * len(times2), 0.5, short, 'once') == 0.0

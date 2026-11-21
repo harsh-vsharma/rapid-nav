@@ -115,7 +115,154 @@ Zip the following into one file and send it to the owner:
 Also send your machine's details: the output of `nvidia-smi` if you have an NVIDIA GPU, otherwise `lscpu | head -n 20`,
 and `free -h`.
 
-## Perception (S2)
+## 10. Global planning (S5)
+
+This part checks the map, the localisation and the planners. It needs a native ROS 2 Jazzy install (or the Docker image
+for the offline check). Build with `colcon build --symlink-install` as in step 1, and `source install/setup.bash` in
+every terminal.
+
+**a. Start the simulation with the planning stack.** The robot starts at the origin of the arena and RViz opens with the
+planning layout (map, particle cloud, costmap, scan and one path per planner):
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py planning:=true
+```
+
+**b. Localisation in RViz.** Wait about 20 seconds. The particle cloud (the small arrows) should collapse onto the robot
+and the map's walls should line up with the laser scan. Save a screenshot as `rviz-map.png`.
+
+**c. Goals in RViz.** Use the "2D Goal Pose" tool to click three goals in open floor, one of them behind a crate. After
+each click, seven coloured lines appear, one per planner (`/planned_paths/<planner id>`), and the log in the launch
+terminal prints each planner's length and planning time. The lines should stay clear of the crates and walls. Save a
+screenshot with the paths as `rviz-paths.png`.
+
+**d. The automatic checks.** This drives the robot (the same drive as step 4), so do not send goals while it runs. In a
+second terminal:
+
+```bash
+ros2 run rapid_nav_tools planner_check --mode sim --map arena
+```
+
+It prints the checks and writes a `planner_check_arena_<time>/` folder with `summary.md`, `table_arena.md`,
+`paths_arena.png`, `results.csv` and `results.json`. The check takes several minutes. Keep the terminal output.
+
+**e. The offline maze check.** This needs no simulation. Stop the simulation (Ctrl+C), then start the planning stack
+without the robot:
+
+```bash
+ros2 launch rapid_nav_navigation planning.launch.py localization:=static use_sim_time:=false map:=maze
+```
+
+In a second terminal:
+
+```bash
+ros2 run rapid_nav_tools planner_check --mode offline --map maze
+```
+
+This writes a `planner_check_maze_<time>/` folder. Stop the launch with Ctrl+C when it has finished.
+
+**What to send back** for this part: `rviz-map.png` and `rviz-paths.png`; the two `planner_check_*` folders from steps d and
+e; the terminal output of both checks; and any error printed by the launch. The meaning of the checks, and the
+numbers they should give, are in [navigation.md](navigation.md).
+
+## 11. Navigation (S6)
+
+This part drives the robot to goals with the navigation stack: the Nav2 controller and behaviour servers, our DWA
+controller, and the goal runs scored on the simulator's ground truth. It needs a native ROS 2 Jazzy install (or the
+Docker image). Build as in step 1, and `source install/setup.bash` in every terminal. Stop any earlier simulation first.
+
+**a. Start the navigation stack.** The default controller is ours (`dwa`); the other two are `dwb` and `rpp`:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+```
+
+RViz opens with the navigation layout (map, particle cloud, the global costmap, scan, the planned paths, and `/plan` in
+cyan and `/local_plan` in green). Wait about 20 seconds for AMCL to settle: the particle cloud collapses onto the robot. In a
+second terminal, `ros2 lifecycle get /bt_navigator` should print `active`.
+
+**b. Three goals in RViz.** Use the "2D Goal Pose" tool to click three goals in open floor, one at a time, and let each
+one finish before the next. The robot should drive to each goal without hitting a crate or a wall. While it drives,
+`/plan` (the global path) and `/local_plan` (the chosen trajectory) should be visible. Save a screenshot in the middle
+of a run, with both paths, as `rviz-nav.png`.
+
+**c. The goal runs.** Keep RViz open, but send no goals while a run goes: the robot drives by itself. In a second
+terminal:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwa
+```
+
+It writes a `nav_run_tour_dwa_<time>/` folder with `summary.md`, `results.json`, `environment.txt` and
+`trajectories_tour.png`, and it prints the same table. The run takes several minutes. Then stop the launch (Ctrl+C),
+start it again with the other controllers, and run each one the same way:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwb
+ros2 run rapid_nav_tools nav_run --scenario tour --controller dwb
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=rpp
+ros2 run rapid_nav_tools nav_run --scenario tour --controller rpp
+```
+
+Last, the `unmapped` scenario (two boxes that are not in the map) with our controller. Restart the launch first, because
+the boxes stay in the world:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwa
+ros2 run rapid_nav_tools nav_run --scenario unmapped --controller dwa
+```
+
+The exit status of `nav_run` is 0 when every check of `dwa` passes (every goal reached by the ground truth, no
+collision, a body clearance of at least 0.05 m). The `dwb` and `rpp` rows are information only.
+
+**d. What to watch.** The robot's motion should be smooth, not hesitant or oscillating. Note any goal that Nav2 reports
+as failed or canceled although the ground-truth row says success, and any "Failed to make progress" or "Timed out"
+message in the launch terminal.
+
+**What to send back** for this part: `rviz-nav.png`; the five bundles (`tour` with the three controllers, `unmapped` with
+`dwa`), each with its `summary.md`, `results.json`, `trajectories_*.png` and `environment.txt`, and the terminal output of
+each launch; a sentence on the robot's
+motion (smooth, hesitant, oscillating) for each controller; and any error printed. The meaning of the checks and the
+numbers they should give are in [navigation.md](navigation.md).
+
+## 12. Moving obstacles (S4)
+
+This part adds people and a cart that move along scripted paths, and scores the navigation stack against them. It needs
+the same install as step 11. Stop any earlier simulation first, and restart the launch before each run (the obstacles
+stay in the world).
+
+**a. See the obstacles.** Start the navigation stack with the `crossing` scenario:
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+```
+
+In Gazebo an orange cylinder (the walker) stands at (1.5, -2.0) and does not move yet. In RViz the display "Moving
+obstacles" shows it at the same place, and `ros2 topic echo --once /scenario/ready` prints `data: true`. Take a
+screenshot of both as `scenario-start.png`.
+
+**b. Run it.** In a second terminal, keeping clear of the robot:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
+```
+
+When goal 2 is sent, the walker should start walking north once the robot is about 2 m from the crossing point, and it
+should stop at y = 0.8. In RViz the marker should follow the walker in Gazebo. The run writes
+`nav_run_crossing_dwa_<time>/` with `summary.md`, whose first table says whether the scenario played out as scripted
+(every row should be PASS), then the navigation table, `results.json`, `environment.txt` and `trajectories_crossing.png`.
+Then repeat with `head_on` and `crowd` (restart the launch with `scenario:=head_on` or `scenario:=crowd` first), and
+with `controller:=dwb` and `controller:=rpp` if time allows.
+
+**c. What to watch.** Whether the walker moves smoothly and in a straight line, whether the robot sees it (the local
+costmap marks it) and what the robot does: slows, stops, goes around or touches it. A FAIL in the validity table is
+worth a sentence on what happened (for example the robot pushed the walker).
+
+**What to send back** for this part: `scenario-start.png`; the bundles of the three scenarios with `dwa`; one sentence
+per scenario on how the robot behaved; and any error printed. The measures and the numbers measured on Docker are in
+[navigation.md](navigation.md).
+
+## 13. Perception (S2)
 
 This section checks the optical flow on the robot's camera. Do steps 1 to 9 above first; the simulation needs the
 S1 robot as well. About 15 minutes.
