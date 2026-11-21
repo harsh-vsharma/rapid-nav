@@ -19,6 +19,13 @@ The build happens in a Docker volume, so the repository's own `build/` and `inst
 The build uses at most two compile jobs (`MAKEFLAGS=-j2`, `--parallel-workers 2`): the C++ planner includes the
 Nav2 headers, and one translation unit of that kind takes about 1 GB, while the Docker VM has about 4.8 GiB.
 
+## PyTorch in the image
+
+The image has PyTorch (CPU wheels) and torchvision in a virtual environment at `/opt/venv`. The environment is created
+with `--system-site-packages`, so ROS and the system numpy 1.x stay visible, and `/opt/venv/bin` is first on `PATH`.
+The RAFT weights are fetched at image build time, so runs need no network. `colcon build` and `colcon test` run with
+the system Python (`/usr/bin/python3`), where PyTorch is absent; the RAFT tests skip there.
+
 ## Limits
 
 The image renders sensors in software. Rates are lower than on a native machine, and there is no GUI.

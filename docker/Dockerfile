@@ -49,10 +49,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pil \
         python3-pytest \
         python3-yaml \
+        python3-venv \
         libegl1 \
         libgl1-mesa-dri \
         mesa-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# PyTorch for the RAFT flow backends, in a virtual environment that still sees the system (ROS) packages.
+# CPU wheels only. The ROS binaries are built against numpy 1.x; pip must not replace it.
+RUN python3 -m venv --system-site-packages /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+ENV PATH=/opt/venv/bin:$PATH
+
+# Fetch the RAFT weights now, so that runs need no network.
+RUN python3 -c "from torchvision.models.optical_flow import raft_small, raft_large, Raft_Small_Weights, Raft_Large_Weights; raft_small(weights=Raft_Small_Weights.DEFAULT); raft_large(weights=Raft_Large_Weights.DEFAULT)"
 
 RUN rosdep update --rosdistro jazzy
 

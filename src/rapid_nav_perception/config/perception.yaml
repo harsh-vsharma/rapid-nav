@@ -1,0 +1,13 @@
+flow_node:
+  ros__parameters:
+    use_sim_time: true
+    backend: raft_small
+    device: auto
+    width: 320
+    max_rate: 10.0
+    max_pair_gap: 0.2
+    depth_slop: 0.04
+    weights_path: ''
+    raft_iterations: 12
+    num_threads: 0
+    publish_vis: true

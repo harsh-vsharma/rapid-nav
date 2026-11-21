@@ -63,6 +63,21 @@ def generate_launch_description():
             description='Scenario of nav_scenarios.yaml whose moving obstacles to start '
                         '(empty: none).',
         ),
+        DeclareLaunchArgument(
+            'perception',
+            default_value='false',
+            description='Start the optical flow node (rapid_nav_perception) on the camera.',
+        ),
+        DeclareLaunchArgument(
+            'flow_backend',
+            default_value='raft_small',
+            description='Flow backend: farneback, raft_small or raft_large.',
+        ),
+        DeclareLaunchArgument(
+            'flow_device',
+            default_value='auto',
+            description="Device for RAFT: 'auto', 'cpu' or 'cuda'.",
+        ),
     ]
     return LaunchDescription(arguments + [OpaqueFunction(function=launch_setup)])
 
@@ -160,6 +175,18 @@ def launch_setup(context):
                 'config_file': os.path.join(gazebo_share, 'config', 'bridge_wheel_tf.yaml'),
                 'use_sim_time': True,
             }],
+        ))
+
+    perception = LaunchConfiguration('perception').perform(context).strip().lower() == 'true'
+    if perception:
+        perception_launch = os.path.join(
+            get_package_share_directory('rapid_nav_perception'), 'launch', 'perception.launch.py')
+        nodes.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(perception_launch),
+            launch_arguments=[
+                ('backend', LaunchConfiguration('flow_backend').perform(context)),
+                ('device', LaunchConfiguration('flow_device').perform(context)),
+            ],
         ))
 
     rviz_config = os.path.join(share, 'rviz', 'sim.rviz')

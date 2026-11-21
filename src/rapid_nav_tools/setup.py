@@ -24,6 +24,7 @@ setup(
             'path_viewer = rapid_nav_tools.path_viewer:main',
             'nav_run = rapid_nav_tools.nav_run:main',
             'obstacle_driver = rapid_nav_tools.obstacle_driver:main',
+            'perception_check = rapid_nav_tools.perception_check:main',
         ],
     },
 )

@@ -12,14 +12,14 @@ A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT
 
 ## Status
 
-The robot, the simulation, the global planning (localisation on the map, the planner server with our planners) and the
-local control (Nav2's controller and behaviour servers, with our dynamic window controller) and the moving obstacles with their scenarios are in testing; perception
-is paused; the other parts are planned.
+The robot, the simulation, the optical flow, the global planning (localisation on the map, the planner server with
+our planners), the local control (Nav2's controller and behaviour servers, with our dynamic window controller) and the
+moving obstacles with their scenarios are in testing; the other parts are planned.
 
 | Part | Stage | Status |
 |---|---|---|
 | Robot and simulation | S1 | in testing |
-| Perception | S2 | paused |
+| Perception | S2 | in testing |
 | Ego-motion compensation | S3 | planned |
 | Dynamic scenarios: moving obstacles and the geometry baseline | S4 | in testing |
 | Navigation baseline: global planning | S5 | in testing |
@@ -126,6 +126,13 @@ ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
 
 The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
 steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10, 11 and 12).
+
+Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is installed; see
+[docs/perception.md](docs/perception.md)):
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
+```
 
 The robot is described in [docs/robot.md](docs/robot.md). The step-by-step check procedure for testers is in
 [docs/sim-checks.md](docs/sim-checks.md).

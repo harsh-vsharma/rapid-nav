@@ -11,8 +11,10 @@ PACKAGE = os.path.normpath(os.path.join(HERE, '..'))
 EKF = os.path.join(PACKAGE, 'config', 'ekf.yaml')
 SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
-EXPECTED_ARGUMENTS = {'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-                      'navigation', 'controller', 'scenario'}
+EXPECTED_ARGUMENTS = {
+    'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
+    'navigation', 'controller', 'scenario', 'perception', 'flow_backend', 'flow_device',
+}
 
 
 def load_ekf_parameters():
