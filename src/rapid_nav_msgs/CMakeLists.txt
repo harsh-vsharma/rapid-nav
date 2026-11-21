@@ -6,10 +6,13 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FlowFrame.msg"
-  DEPENDENCIES std_msgs sensor_msgs builtin_interfaces
+  "msg/TrackedObstacle.msg"
+  "msg/TrackedObstacleArray.msg"
+  DEPENDENCIES std_msgs sensor_msgs builtin_interfaces geometry_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)
