@@ -1,0 +1,70 @@
+{
+ "scenario": "crossing",
+ "controller": "dwb",
+ "hazards": "oracle",
+ "rtf": 1.0,
+ "validity": [
+  {
+   "check": "walker_1 started",
+   "value": "2.77 m moved",
+   "expected": "> 0.5 m",
+   "verdict": "PASS"
+  },
+  {
+   "check": "walker_1 follows its path",
+   "value": "0.000 m",
+   "expected": "<= 0.1 m",
+   "verdict": "PASS"
+  },
+  {
+   "check": "walker_1 never stalls",
+   "value": "0.0 s",
+   "expected": "<= 1.0 s",
+   "verdict": "PASS"
+  },
+  {
+   "check": "walker_1 speed",
+   "value": "0.497 m/s",
+   "expected": "0.50 m/s +- 10 %",
+   "verdict": "PASS"
+  },
+  {
+   "check": "encounter happened (walker_1, goal 2)",
+   "value": "0.39 m",
+   "expected": "<= 1.5 m",
+   "verdict": "PASS"
+  }
+ ],
+ "goals": [
+  {
+   "goal": 0,
+   "nav2_status": "SUCCEEDED",
+   "truth_success": true,
+   "time_s": 14.815000000000001,
+   "collision_episodes": 0,
+   "min_clearance_dynamic_m": 1.9145132295614093,
+   "closest_approach_m": 2.3645132295614095,
+   "min_clearance_m": 0.6512631543925179
+  },
+  {
+   "goal": 1,
+   "nav2_status": "SUCCEEDED",
+   "truth_success": true,
+   "time_s": 51.83200000000001,
+   "collision_episodes": 1,
+   "min_clearance_dynamic_m": -0.05808713293257467,
+   "closest_approach_m": 0.39191286706742534,
+   "min_clearance_m": -0.05808713293257467
+  },
+  {
+   "goal": 2,
+   "nav2_status": "SUCCEEDED",
+   "truth_success": true,
+   "time_s": 9.924000000000007,
+   "collision_episodes": 0,
+   "min_clearance_dynamic_m": 0.6228787246633234,
+   "closest_approach_m": 1.0728787246633233,
+   "min_clearance_m": 0.6228787246633234
+  }
+ ]
+}

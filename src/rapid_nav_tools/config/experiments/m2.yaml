@@ -1,0 +1,10 @@
+# M2: vision. 45 runs at the simulation speed of the flow source (RTF 0.25), about 10 h in Docker.
+# The flow runs also run track_check (camera tracks against the true poses).
+name: m2
+rtf: 0.25
+scenarios: [crossing, head_on, crowd]
+controllers: [dwb]
+hazards: ["off", oracle, flow]
+repeats: 5
+seed: 7
+track_check: true

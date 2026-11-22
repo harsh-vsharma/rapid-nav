@@ -1,0 +1,8 @@
+# M1: geometry against knowing the motion. 135 runs, about 8 h at RTF 1 in Docker.
+name: m1
+rtf: 1.0
+scenarios: [crossing, head_on, crowd]
+controllers: [dwa, dwb, rpp]
+hazards: ["off", oracle_static, oracle]
+repeats: 5
+seed: 7

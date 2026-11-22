@@ -1,0 +1,8 @@
+# Pilot: a small matrix to check the runner and the report (4 runs, about 15 min at RTF 1).
+name: pilot
+rtf: 1.0
+scenarios: [crossing]
+controllers: [dwb]
+hazards: ["off", oracle]
+repeats: 2
+seed: 7
