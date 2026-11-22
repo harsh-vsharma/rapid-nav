@@ -68,7 +68,7 @@ def draw_strip(path, title, groups, ylabel, zero_line=False):
     def y_of(v):
         return MARGIN_TOP + (high - v) / (high - low) * plot_h
 
-    draw.text((MARGIN_LEFT, 12), title, fill='black')
+    draw.text((MARGIN_LEFT, 6), title, fill='black')
     draw.rectangle([MARGIN_LEFT, MARGIN_TOP, WIDTH - MARGIN_RIGHT, MARGIN_TOP + plot_h],
                    outline=(120, 120, 120))
     for tick in nice_ticks(low, high):
@@ -76,7 +76,7 @@ def draw_strip(path, title, groups, ylabel, zero_line=False):
             y = y_of(tick)
             draw.line([MARGIN_LEFT, y, WIDTH - MARGIN_RIGHT, y], fill=(228, 228, 228))
             draw.text((8, y - 5), '{:g}'.format(tick), fill='black')
-    draw.text((8, MARGIN_TOP - 22), ylabel, fill='black')
+    draw.text((8, MARGIN_TOP - 16), ylabel, fill='black')
     if zero_line and low < 0.0 < high:
         draw.line([MARGIN_LEFT, y_of(0.0), WIDTH - MARGIN_RIGHT, y_of(0.0)], fill=(200, 40, 40),
                   width=2)
