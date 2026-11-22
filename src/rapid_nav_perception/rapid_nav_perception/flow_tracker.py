@@ -57,7 +57,7 @@ class FlowTracker(Node):
         'min_point_speed': 0.20, 'min_speed': 0.20, 'max_point_speed': 3.0, 'min_height': 0.05,
         'max_height': 2.0, 'cell': 0.10,
         'min_samples': 10, 'gate': 0.6, 'alpha': 0.5, 'max_track_age': 1.0, 'confirm': 2,
-        'tf_timeout': 0.2, 'min_texture': 6.0, 'gate_k': 2.0, 'flow_sigma_px': 0.5,
+        'tf_timeout': 0.2, 'min_texture': 6.0, 'gate_k': 0.0, 'flow_sigma_px': 0.5,
     }
 
     def __init__(self):
