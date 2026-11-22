@@ -103,7 +103,10 @@ void HazardLayer::updateBounds(
         try {
           const auto t = tf_->lookupTransform(
             global_frame, msg->header.frame_id, tf2::TimePointZero);
-          tf2::fromMsg(t.transform, transform);
+          const auto & q = t.transform.rotation;
+          const auto & d = t.transform.translation;
+          transform = tf2::Transform(
+            tf2::Quaternion(q.x, q.y, q.z, q.w), tf2::Vector3(d.x, d.y, d.z));
         } catch (const std::exception & e) {
           ok = false;
           RCLCPP_WARN_THROTTLE(

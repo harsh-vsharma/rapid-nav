@@ -64,6 +64,12 @@ def generate_launch_description():
                         '(empty: none).',
         ),
         DeclareLaunchArgument(
+            'hazards',
+            default_value='off',
+            description="Hazard layer in the costmaps: 'off', 'oracle' (true obstacle velocities) "
+                        "or 'oracle_static' (positions only; the ablation).",
+        ),
+        DeclareLaunchArgument(
             'perception',
             default_value='false',
             description='Start the optical flow node (rapid_nav_perception) on the camera.',
@@ -119,6 +125,11 @@ def launch_setup(context):
         raise RuntimeError(
             'navigation:=true already starts the planning stack; do not pass planning:=true too'
         )
+    hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
+    if hazards not in ('off', 'oracle', 'oracle_static'):
+        raise RuntimeError(
+            "hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(hazards)
+        )
     if controller not in CONTROLLERS:
         raise RuntimeError(
             "controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller)
@@ -130,6 +141,7 @@ def launch_setup(context):
             PythonLaunchDescriptionSource(navigation_launch),
             launch_arguments=[
                 ('controller', controller),
+                ('hazards', hazards),
                 ('use_sim_time', 'true'),
                 ('x', x),
                 ('y', y),
@@ -154,7 +166,7 @@ def launch_setup(context):
     if scenario:
         nodes.append(IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(share, 'launch', 'scenario.launch.py')),
-            launch_arguments=[('scenario', scenario)],
+            launch_arguments=[('scenario', scenario), ('hazards', hazards)],
         ))
 
     if odom_tf == 'ekf':

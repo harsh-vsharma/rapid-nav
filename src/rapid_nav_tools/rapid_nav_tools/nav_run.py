@@ -76,6 +76,7 @@ CLOSE_ENCOUNTER_M = 0.30
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                      reliability=ReliabilityPolicy.RELIABLE)
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
+HAZARDS = ('off', 'oracle', 'oracle_static')
 ROBOT_RADIUS_M = 0.25
 GOAL_XY_TOLERANCE_M = 0.25
 GOAL_YAW_TOLERANCE_RAD = 0.35
@@ -485,12 +486,13 @@ def spawn_boxes(boxes, size, log_path):
     return extra
 
 
-def write_environment(out_dir, argv, scenario, controller, profile, goal_timeout):
+def write_environment(out_dir, argv, scenario, controller, profile, goal_timeout, hazards='off'):
     """Write environment.txt: the host, the commands and the scenario."""
     lines = environment_lines(argv)
     lines += [
         'scenario: ' + scenario,
         'controller: {} (recorded only: the launch chose it)'.format(controller),
+        'hazards: {} (recorded only: the launch chose it)'.format(hazards),
         'profile: ' + profile,
         'goal timeout (sim s): {}'.format(goal_timeout),
         'robot radius (m): {}'.format(ROBOT_RADIUS_M),
@@ -539,9 +541,10 @@ def build_checks(controller, goals, dynamic=False):
     ]
 
 
-def summary_text(scenario, controller, checks, goals, validity=()):
+def summary_text(scenario, controller, checks, goals, validity=(), hazards='off'):
     """Return summary.md: the validity table, the check table and the per-goal table."""
-    lines = ['# nav_run: {} with {}'.format(scenario, controller), '']
+    lines = ['# nav_run: {} with {}'.format(scenario, controller), '',
+             'hazards: {}'.format(hazards), '']
     if validity:
         lines += ['## Scenario validity (did it play out as scripted)', '',
                   '| check | value | expected | verdict |', '|---|---|---|---|']
@@ -678,8 +681,11 @@ def parse_arguments(argv):
     parser.add_argument('--scenario', required=True, choices=SCENARIOS)
     parser.add_argument('--controller', default='dwa', choices=CONTROLLERS,
                         help='recorded in the bundle; the launch chose the controller')
+    parser.add_argument('--hazards', default='off', choices=HAZARDS,
+                        help='recorded in the bundle; the launch chose the hazard source')
     parser.add_argument('--out', default=None,
-                        help='bundle folder (default nav_run_<scenario>_<controller>_<time>)')
+                        help='bundle folder (default nav_run_<scenario>_<controller>[_<hazards>]'
+                             '_<time>)')
     parser.add_argument('--profile', default='native', choices=('native', 'docker'))
     parser.add_argument('--goal-timeout', type=float, default=120.0,
                         help='simulated seconds allowed per goal')
@@ -690,10 +696,12 @@ def main(argv=None):
     """Run the scenario, write the bundle and print the summary; return the exit status."""
     argv_list = list(sys.argv if argv is None else argv)
     args = parse_arguments(argv_list[1:])
-    out_dir = args.out or 'nav_run_{}_{}_{}'.format(args.scenario, args.controller, stamp_now())
+    tag = '' if args.hazards == 'off' else '_' + args.hazards
+    out_dir = args.out or 'nav_run_{}_{}{}_{}'.format(
+        args.scenario, args.controller, tag, stamp_now())
     os.makedirs(out_dir, exist_ok=True)
     write_environment(out_dir, argv_list, args.scenario, args.controller, args.profile,
-                      args.goal_timeout)
+                      args.goal_timeout, args.hazards)
 
     scenario = load_scenario(args.scenario)
     validate_scenario(args.scenario, scenario)
@@ -760,6 +768,7 @@ def main(argv=None):
     results = {
         'scenario': args.scenario,
         'controller': args.controller,
+        'hazards': args.hazards,
         'profile': args.profile,
         'goal_timeout_s': args.goal_timeout,
         'checks': checks,
@@ -771,7 +780,7 @@ def main(argv=None):
     }
     with open(os.path.join(out_dir, 'results.json'), 'w', encoding='utf-8') as handle:
         json.dump(results, handle, indent=1)
-    summary = summary_text(args.scenario, args.controller, checks, goals, validity)
+    summary = summary_text(args.scenario, args.controller, checks, goals, validity, args.hazards)
     with open(os.path.join(out_dir, 'summary.md'), 'w', encoding='utf-8') as handle:
         handle.write(summary)
     draw_picture(os.path.join(out_dir, 'trajectories_{}.png'.format(args.scenario)),

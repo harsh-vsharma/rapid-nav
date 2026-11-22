@@ -31,10 +31,12 @@ usage: scripts/dev.sh <command>
                   planning stack + planner_check; offline (static localisation) on the map, or with
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
-  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>
+  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static]
                   navigation stack in the simulation + nav_run (goal runs scored on ground truth,
                   against the moving obstacles of the crossing, head_on and crowd scenarios);
-                  the bundle goes to nav_run_<scenario>_<controller>_<time>/
+                  the optional third word starts the hazard layer with the true obstacle velocities
+                  (oracle) or positions only (oracle_static); default off; the bundle goes to
+                  nav_run_<scenario>_<controller>[_<hazards>]_<time>/
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -141,12 +143,17 @@ case "${1:-}" in
         ;;
     nav-smoke)
         shift
-        if [ "$#" -ne 2 ]; then
-            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp>" >&2
+        if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static]" >&2
             exit 2
         fi
         scenario="$1"
         controller="$2"
+        hazards="${3:-off}"
+        case "$hazards" in
+            off|oracle|oracle_static) ;;
+            *) echo "nav-smoke: unknown hazards $hazards" >&2; exit 2 ;;
+        esac
         case "$scenario" in
             tour|unmapped|crossing|head_on|crowd) ;;
             *) echo "nav-smoke: unknown scenario $scenario" >&2; exit 2 ;;
@@ -156,9 +163,11 @@ case "${1:-}" in
             *) echo "nav-smoke: unknown controller $controller" >&2; exit 2 ;;
         esac
         stamp="$(date +%Y%m%d-%H%M%S)"
-        bundle="/repo/nav_run_${scenario}_${controller}_$stamp"
-        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario"
-        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --profile docker --out $bundle"
+        tag=""
+        [ "$hazards" = "off" ] || tag="_$hazards"
+        bundle="/repo/nav_run_${scenario}_${controller}${tag}_$stamp"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario hazards:=$hazards"
+        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --hazards $hazards --profile docker --out $bundle"
         # Start the navigation stack in the background, run nav_run (it waits for the clock and the
         # navigation action server), copy the launch log into the bundle, stop the stack and exit
         # with nav_run's code.

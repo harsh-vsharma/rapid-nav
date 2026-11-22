@@ -19,6 +19,12 @@ def generate_launch_description():
             description='Scenario of nav_scenarios.yaml whose moving obstacles to start '
                         '(none when empty or when the scenario has no obstacles).',
         ),
+        DeclareLaunchArgument(
+            'hazards',
+            default_value='off',
+            description="'oracle' or 'oracle_static' also starts oracle_obstacles for the "
+                        "scenario (true or zero velocities); 'off' starts nothing.",
+        ),
         OpaqueFunction(function=launch_setup),
     ])
 
@@ -44,7 +50,22 @@ def launch_setup(context):
             obstacle['name']))
         topics.append('/model/{}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'.format(
             obstacle['name']))
-    return [
+    hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
+    if hazards not in ('off', 'oracle', 'oracle_static'):
+        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
+            hazards))
+    oracle = []
+    if hazards != 'off':
+        oracle = [Node(
+            package='rapid_nav_tools',
+            executable='oracle_obstacles',
+            name='oracle_obstacles',
+            output='screen',
+            parameters=[{'scenario': name,
+                         'velocity_mode': 'true' if hazards == 'oracle' else 'zero',
+                         'use_sim_time': True}],
+        )]
+    return oracle + [
         Node(
             package='ros_gz_bridge',
             executable='parameter_bridge',

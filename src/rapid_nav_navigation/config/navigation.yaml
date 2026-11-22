@@ -120,6 +120,18 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 0.55
+      hazard_layer:
+        plugin: "rapid_nav_hazard::HazardLayer"
+        enabled: true
+        topic: /obstacles/tracked
+        horizon_s: 2.0
+        time_step_s: 0.25
+        robot_radius: 0.25
+        margin: 0.05
+        max_cost: 252
+        min_cost: 60
+        min_speed: 0.05
+        max_age_s: 0.5
 
 local_costmap:
   local_costmap:
@@ -153,6 +165,18 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 0.45
+      hazard_layer:
+        plugin: "rapid_nav_hazard::HazardLayer"
+        enabled: true
+        topic: /obstacles/tracked
+        horizon_s: 2.0
+        time_step_s: 0.25
+        robot_radius: 0.25
+        margin: 0.05
+        max_cost: 252
+        min_cost: 60
+        min_speed: 0.05
+        max_age_s: 0.5
 
 controller_server:
   ros__parameters:
