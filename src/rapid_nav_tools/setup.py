@@ -1,3 +1,5 @@
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'rapid_nav_tools'
@@ -9,6 +11,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config/experiments', glob('config/experiments/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -27,6 +30,7 @@ setup(
             'perception_check = rapid_nav_tools.perception_check:main',
             'oracle_obstacles = rapid_nav_tools.oracle_obstacles:main',
             'track_check = rapid_nav_tools.track_check:main',
+            'experiment_report = rapid_nav_tools.experiment_report:main',
         ],
     },
 )

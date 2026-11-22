@@ -27,7 +27,7 @@ moving obstacles with their scenarios are in testing; the other parts are planne
 | Hazard layer: velocity-aware costmap from tracked obstacles (oracle source) | S7 | in testing |
 | Camera-based obstacle tracks: the flow source of the hazard layer | S3 | in testing |
 | Adaptive flow | S8 | planned |
-| Experiments | S9 | planned |
+| Experiments: repeated matrices, runner, statistics | S9 | in testing |
 
 ## Pipeline
 
@@ -130,7 +130,7 @@ into the costmaps from their true velocities, or `hazards:=oracle_static` for th
 camera instead (RAFT flow, the robot's motion removed with depth and TF); the simulation then runs at a quarter of real
 time (`rtf:=0.25`, `--rtf 0.25` for `scripts/dev.sh`) so that the flow network keeps up.
 
-The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
+The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md), the repeated experiments in [docs/experiments.md](docs/experiments.md); the
 steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 to 15).
 
 Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is installed; see
