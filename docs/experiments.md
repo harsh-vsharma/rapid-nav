@@ -70,8 +70,9 @@ A kept more distance) and for collisions (negative means A had fewer), with a bo
 "too few pairs". The pooled table does the same over all scenarios of a controller.
 
 There are no p-values. The tables read an interval in words: "the interval excludes zero" means the data point to a
-difference in that direction, "includes zero" means they do not separate the two configurations. With 5 repeats the
-intervals are wide; they are an honest account of that, not a test.
+difference in that direction, "includes zero" means they do not separate the two configurations. With fewer than 10 pairs a percentile bootstrap interval is too narrow; read
+"excludes zero" on few pairs as a hint, not a finding (the tables mark such readings "(few pairs)"). With 5 repeats the
+intervals are an account of the spread, not a test.
 
 **Plots.** Per scenario, the minimum clearance of every valid run (dots) and the mean (bar) per controller and
 configuration, with a red line at zero, and the collision episodes in the same layout.

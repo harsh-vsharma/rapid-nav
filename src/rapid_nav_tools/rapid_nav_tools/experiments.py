@@ -21,6 +21,7 @@ import yaml
 Z95 = 1.959963984540054
 BOOTSTRAP_RESAMPLES = 10000
 MIN_PAIRS = 3
+FEW_PAIRS = 10  # below this a percentile bootstrap interval is too narrow
 
 INDEX_FIELDS = ['scenario', 'controller', 'hazards', 'repeat', 'bundle', 'exit_code', 'wall_s',
                 'valid']
@@ -384,14 +385,19 @@ def pair_stats(records, comparisons=None, seed=7):
     return rows, pooled
 
 
-def interval_words(interval):
-    """Read a (mean, low, high) interval in words: excludes or includes zero, or too few pairs."""
+def interval_words(interval, n_pairs=None):
+    """Read a (mean, low, high) interval in words: excludes or includes zero, or too few pairs.
+
+    With n_pairs below FEW_PAIRS the reading carries the note "(few pairs)".
+    """
     if interval is None:
         return 'too few pairs'
     _, low, high = interval
-    if low > 0.0 or high < 0.0:
-        return 'the interval excludes zero'
-    return 'the interval includes zero'
+    excludes = low > 0.0 or high < 0.0
+    word = 'the interval {} zero'.format('excludes' if excludes else 'includes')
+    if n_pairs is not None and n_pairs < FEW_PAIRS:
+        word += ' (few pairs)'
+    return word
 
 
 # ---------------------------------------------------------------------------------------------
@@ -445,8 +451,10 @@ def pair_table_rows(pairs):
     rows = []
     for p in pairs:
         rows.append([p['scenario'], p['controller'], '{} vs {}'.format(p['a'], p['b']),
-                     str(p['n_pairs']), _interval(p['clearance']), interval_words(p['clearance']),
-                     _interval(p['collisions'], 2), interval_words(p['collisions'])])
+                     str(p['n_pairs']), _interval(p['clearance']),
+                     interval_words(p['clearance'], p['n_pairs']),
+                     _interval(p['collisions'], 2),
+                     interval_words(p['collisions'], p['n_pairs'])])
     return header, rows
 
 

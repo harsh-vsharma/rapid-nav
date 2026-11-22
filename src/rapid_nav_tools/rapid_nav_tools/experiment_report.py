@@ -175,7 +175,9 @@ def build_report(directory, out):
                      .format(sum(rtfs) / len(rtfs), min(rtfs), max(rtfs)))
     lines += ['', 'Intervals: Wilson 95 % for rates; for paired differences (A minus B, matched '
               'by repeat) a bootstrap 95 % interval of the mean (10 000 resamples, percentile). '
-              'No p-values: the reading says whether the interval excludes or includes zero.',
+              'No p-values: the reading says whether the interval excludes or includes zero. '
+              'With fewer than 10 pairs a percentile bootstrap interval is too narrow; read '
+              '{0}excludes zero{0} on few pairs as a hint, not a finding.'.format(chr(39)),
               '']
     lines += ['## Per cell', '', ex.markdown_table(cell_header, cell_rows)]
     lines += ['## Paired differences per scenario and controller', '',

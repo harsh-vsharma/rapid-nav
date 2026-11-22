@@ -125,6 +125,9 @@ def test_too_few_pairs():
     assert ex.interval_words(None) == 'too few pairs'
     assert ex.interval_words((0.2, 0.1, 0.3)) == 'the interval excludes zero'
     assert ex.interval_words((0.0, -0.1, 0.1)) == 'the interval includes zero'
+    assert ex.interval_words((0.2, 0.1, 0.3), 9) == 'the interval excludes zero (few pairs)'
+    assert ex.interval_words((0.0, -0.1, 0.1), 3) == 'the interval includes zero (few pairs)'
+    assert ex.interval_words((0.2, 0.1, 0.3), 10) == 'the interval excludes zero'
 
 
 def write_bundle(path, goals, validity_ok=True, nested=False):
