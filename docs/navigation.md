@@ -351,6 +351,12 @@ current positions only. `oracle` minus `oracle_static` is the effect of knowing 
 the effect of a bigger, softer obstacle. With `hazards:=off` (the default) the stack is the S4 stack, with the same
 parameters.
 
+**The camera source.** With `hazards:=flow` the velocities come from the robot's own camera instead of the simulator:
+`flow_tracker` (see [perception.md](perception.md)) publishes the same message with `source: flow`, and `oracle_obstacles`
+does not run. The simulation runs at a quarter of real time (`rtf:=0.25`) because the flow network needs about 0.6 s per
+frame pair on the development machine; every time in a result is in simulated seconds, and `nav_run` records the measured
+real-time factor in `environment.txt`, `results.json` and `summary.md`.
+
 **Prediction and cost.** For each obstacle the layer paints disks at its predicted centres `p + v (age + t)` for
 `t = 0, 0.25, ... 2.0 s` (`horizon_s`, `time_step_s`), where `age` is the age of the message. The radius is the
 obstacle's radius + the robot radius (0.25 m) + a margin of 0.05 m, because the controllers test the robot's centre
@@ -374,6 +380,7 @@ it replans at 1 Hz).
 ```bash
 ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=oracle
 scripts/dev.sh nav-smoke crossing dwb oracle
+scripts/dev.sh nav-smoke crossing dwb flow --rtf 0.25
 ```
 
 `nav_run --hazards` records the choice in `environment.txt`, `results.json` and `summary.md`. A run with the layer is
@@ -421,6 +428,31 @@ on; the oracle band shifts the head-on clearances from about -0.05 m to about -0
 passes the crossing further away (0.27 m against 0.16 m); and the layer is not free: four runs (three of them our DWA)
 miss a goal that the baseline reached, which is a finding to look into and not a tuned result. The repeated matrix and
 the ranking are the experiments of S9.
+
+### First results with the camera source (S3)
+
+`crossing`, `head_on` and `crowd` with the dwb controller, `off`, `oracle` and `flow`, one run each at `rtf:=0.25` (measured
+0.24 in every run). All scenario-validity rows pass. The flow rows come from `track-smoke`, which also scores the tracks
+(the last three columns); the `head_on` runs are of the current 2-goal scenario.
+
+| scenario | hazards | goals reached | collisions | min dynamic clearance (m) | closest approach (m) | mean time per goal (s) | false tracks per s | detection (in view) |
+|---|---|---|---|---|---|---|---|---|
+| crossing | off | 3/3 | 1 | -0.05 | 0.40 | 14.1 | | |
+| crossing | oracle | 3/3 | 1 | -0.06 | 0.39 | 25.5 | | |
+| crossing | flow | 3/3 | 1 | -0.04 | 0.41 | 16.1 | 0.71 | 0.43 (12 of 28) |
+| head_on | off | 2/3 | 0 | 0.04 | 0.49 | 15.2 | | |
+| head_on | oracle | 2/3 | 0 | 0.02 | 0.47 | 15.2 | | |
+| head_on | flow | 2/3 | 0 | 0.05 | 0.50 | 15.0 | 0.64 | 0.55 (17 of 31) |
+| crowd | off | 3/3 | 1 | -0.05 | 0.40 | 13.9 | | |
+| crowd | oracle | 3/3 | 0 | 0.04 | 0.49 | 13.8 | | |
+| crowd | flow | 3/3 | 0 | 0.14 | 0.59 | 14.3 | 0.73 | 0.63 (54 of 86) |
+
+These are single runs, and the differences are of the size of the run-to-run spread already seen in S4 and S7: one
+collision episode more or less, a few centimetres of clearance. Read honestly: the camera source did not make the robot
+worse than `off` in any scenario, matched the oracle on `head_on` and `crowd`, and did not avoid the `crossing`
+collision (nor did the oracle). The tracks it feeds are far from perfect (about 0.7 false tracks per second, and at
+most two thirds of the in-view obstacles detected); the false tracks sit mostly on far walls where the costmap is
+already high, so they cost little here. The matrix with repeats is the experiment of S9.
 
 ## Tools
 

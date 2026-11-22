@@ -99,7 +99,13 @@ The simulation side of the moving obstacles (S4, details in [navigation.md](navi
 The hazard layer (S7, details in [navigation.md](navigation.md)):
 
 - **Tracked obstacles.** `rapid_nav_msgs/TrackedObstacleArray` on `/obstacles/tracked`: position, velocity and radius of
-  each tracked obstacle in the map frame. Any velocity source publishes it: the oracle now, the flow-based tracker later.
+  each tracked obstacle in the map frame. Any velocity source publishes it: the oracle (`hazards:=oracle`) or the camera-based tracker (`hazards:=flow`).
 - **Hazard layer.** `rapid_nav_hazard::HazardLayer`, a Nav2 costmap layer (prediction core `hazard_core` without ROS
   dependency) in the global and the local costmap, after the inflation layer: it paints each obstacle's predicted
   positions over 2 s with a cost that falls with prediction time, at most 252.
+- **Camera-based source (S3).** `flow_tracker` (package `rapid_nav_perception`) subscribes to the `FlowFrame`s, which carry
+  the flow and the depth of both frames. It lifts each pixel to a 3-D point at both times, moves both points into `map`
+  with the camera pose at their own stamps (so the robot's motion cancels for the static world), keeps the points that
+  still move, groups them into obstacles, tracks them and publishes `TrackedObstacleArray` with `source: flow`. It runs
+  only with `hazards:=flow`; the simulation then runs slower (`rtf`, default 1.0) so that the flow network keeps up. How
+  it works and how well: [perception.md](perception.md).

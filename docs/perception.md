@@ -49,12 +49,73 @@ The message's `backend` field always says which backend really ran.
 | `previous_stamp` | `builtin_interfaces/Time` | stamp of the previous (first) frame |
 | `flow` | `sensor_msgs/Image`, `32FC2` | pixels, previous → current, x right and y down, at the processing size |
 | `depth` | `sensor_msgs/Image`, `32FC1` | metres, current frame, resized to the flow size (nearest neighbour) |
+| `previous_depth` | `sensor_msgs/Image`, `32FC1` | metres, previous frame, same size (the node keeps the last 30 depth images and picks the nearest one to each frame) |
 | `camera_info` | `sensor_msgs/CameraInfo` | intrinsics scaled to the processing size |
 | `backend` | `string` | the backend that really ran: `farneback`, `raft_small` or `raft_large` |
 | `latency_ms` | `float32` | wall-clock compute time of the flow alone |
 
 The node also publishes `/perception/flow_vis` (`rgb8`): the flow as a colour picture. The hue is the direction of the
 flow and the saturation is its size; zero flow is white.
+
+## From flow to moving obstacles
+
+`flow_tracker` turns the flow frames into tracked obstacles for the hazard layer (`hazards:=flow`, topic
+`/obstacles/tracked`, `source: flow`). The geometry, in plain words:
+
+1. **Two 3-D points per pixel.** A pixel of the previous image moved to a pixel of the current one (the flow). The depth
+   at the first pixel in the previous depth image and at the second pixel in the current depth image give the point in
+   the camera frame at both times. Depth and flow are first reduced to the median of each 4 x 4 block (`depth_block`),
+   because the depth sensor's noise (7 mm per pixel) over two frames 0.04 s apart would otherwise look like 0.2 m/s.
+2. **Both points into the world.** Each point goes through the camera pose in `map` at its own time (TF at the depth
+   image's stamp, so a turning robot does not smear the points). A point of the static world then has the same world
+   position at both times: its velocity is zero whatever the robot does. That is the removal of the robot's own motion.
+3. **Moving points.** A point counts as moving when its horizontal speed is 0.2 to 3.0 m/s and its height above the floor
+   is 0.05 to 2.0 m, it lies 0.3 to 4.0 m from the camera and the previous image has texture in two directions around it
+   (the smaller eigenvalue of the structure tensor of the block, at least `min_texture` 6.0: flat walls and straight edges
+   give flow that is only a guess).
+4. **Groups and tracks.** Moving points are binned on a 0.10 m grid; touching cells form a cluster, which needs at least
+   10 points and a mean velocity of at least 0.2 m/s (noise has no mean). Clusters are matched to tracks by the nearest
+   position within 0.6 m, the velocity is smoothed (0.5), a track is confirmed after two matches and is dropped after
+   1.0 s without one. Only confirmed tracks are published, with a radius from the size of the cluster.
+
+| parameter | default | meaning |
+|---|---|---|
+| `depth_block` | `4` | block size of the median filter on depth and flow (1: off; then `stride` sets the sample grid) |
+| `min_depth`, `max_depth` | `0.3`, `4.0` | range of the depth used, in metres |
+| `min_point_speed`, `max_point_speed` | `0.20`, `3.0` | speed window of a moving point, m/s |
+| `min_height`, `max_height` | `0.05`, `2.0` | height window above the floor, m |
+| `min_texture` | `6.0` | smallest structure-tensor eigenvalue per block (0: off) |
+| `gate_k`, `flow_sigma_px` | `0.0`, `0.5` | raises the speed floor with depth to `gate_k * z * sigma / (fx * dt)`; off by default |
+| `cell`, `min_samples`, `min_speed` | `0.10`, `10`, `0.20` | cluster grid (m), points per cluster, mean speed per cluster (m/s) |
+| `gate`, `alpha`, `max_track_age`, `confirm` | `0.6`, `0.5`, `1.0`, `2` | matching distance (m), velocity smoothing, track lifetime (s), matches to confirm |
+
+**Why a slower simulation.** RAFT-Small on this CPU needs about 0.6 s for a pair, so at real time it gets two pairs per
+simulated second, too few to follow a walker. `rtf:=0.25` (the `rtf` argument of `sim.launch.py`, also `--rtf` of
+`scripts/dev.sh`) slows the Gazebo physics to a quarter; the machine then processes about 7.7 pairs per simulated
+second for the flow alone and 3 to 4 with the tracker and navigation running. All navigation timings below are in
+simulated seconds; `nav_run` records the measured real-time factor.
+
+**Textured movers.** A plain coloured box gives no flow on its own surface, so the scenario obstacles carry a texture
+(`rapid_nav_movers`); the walls and the floor are plain.
+
+### How well it tracks
+
+`track_check` (`scripts/dev.sh track-smoke <scenario>`) scores the tracks against the obstacles' true poses, which it
+uses for scoring only. An obstacle counts as in view inside the camera's 69 degrees and 0.3 to 6 m; it is detected
+when a track lies within 0.5 m. A false track is a confirmed track that has no obstacle within 0.5 m in more than half
+of its messages. One run per cell at `rtf:=0.25`, dwb, final parameters:
+
+| scenario | detection (in view) | false tracks per simulated second | median position error (m) |
+|---|---|---|---|
+| crossing | 0.73 (8 of 11), 0.43 (12 of 28) in the navigation run | 0.41, 0.71 | 0.17 |
+| head_on | 0.54 (7 of 13), 0.55 (17 of 31) | 0.29, 0.64 | 0.28 |
+| crowd | 0.71 (59 of 83), 0.63 (54 of 86) | 0.58, 0.73 | 0.23 |
+
+The two numbers per cell are two separate runs, which shows the spread. Limits: the false tracks sit mostly on the far
+walls and obstacle edges, where the flow error (0.3 to 0.5 px is 0.1 to 0.2 m/s at 4 to 6 m) is as large as the speed
+of a slow walker; they are not mostly while turning. The target of at most 0.2 false tracks per second is not met, and
+a sensor with less noise or a better flow model is the way to meet it. The gate that raises the speed floor with depth
+removes the false tracks but also most walkers (crossing: 1 of 16 in view), so it is off.
 
 ## Parameters
 
@@ -74,7 +135,7 @@ The defaults are in `config/perception.yaml`. The launch file exposes four of th
 | `publish_vis` | `true` | publish `/perception/flow_vis` |
 
 The node prints one startup line, `flow_node: backend=<ran> device=<device> size=<w>x<h> torch=<version or none>`,
-and one status line every 5 s with the received, processed and dropped pairs and the median latency.
+and one status line every 5 s with the received, processed and dropped pairs, the median latency and `no_prev_depth`, the number of pairs skipped because no separate depth image was found for the previous frame.
 
 ## Running it
 
