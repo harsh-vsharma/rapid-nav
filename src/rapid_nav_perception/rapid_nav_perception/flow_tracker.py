@@ -89,14 +89,17 @@ class FlowTracker(Node):
     def on_frame(self, msg):
         """Process one FlowFrame and publish the confirmed tracks."""
         self.counts['frames'] += 1
-        t0, t1 = stamp_seconds(msg.previous_stamp), stamp_seconds(msg.header.stamp)
+        # The points come from the depth images, so the poses and dt are those of the depth stamps
+        # (they differ from the colour stamps by up to 0.03 s, which is 0.015 rad at 0.5 rad/s).
+        s0, s1 = msg.previous_depth.header.stamp, msg.depth.header.stamp
+        t0, t1 = stamp_seconds(s0), stamp_seconds(s1)
         dt = t1 - t0
         if dt <= 0.0:
             self.counts['bad_dt'] += 1
             return
         frame = msg.header.frame_id
-        pose0 = self.pose(frame, msg.previous_stamp)
-        pose1 = self.pose(frame, msg.header.stamp)
+        pose0 = self.pose(frame, s0)
+        pose1 = self.pose(frame, s1)
         if pose0 is None or pose1 is None:
             self.counts['no_tf'] += 1
             return
@@ -119,7 +122,7 @@ class FlowTracker(Node):
             # Depth noise gives random velocities; a real mover has a mean velocity of its own.
             clusters = [c for c in clusters if math.hypot(c['vx'], c['vy']) >= p['min_speed']]
         self.tracker.update(clusters, t1)
-        self.publish(msg.header.stamp, t1)
+        self.publish(s1, t1)
         self.report()
 
     def publish(self, stamp, t1):
