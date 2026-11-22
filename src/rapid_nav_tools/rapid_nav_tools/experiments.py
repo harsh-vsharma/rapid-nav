@@ -1,4 +1,5 @@
-"""Experiment matrices: loading, expansion, bundle parsing, statistics and tables (no ROS).
+"""
+Experiment matrices: loading, expansion, bundle parsing, statistics and tables (no ROS).
 
 A matrix names scenarios, controllers and hazard configurations and a number of repeats. The runner
 (scripts/run_matrix.sh) executes every run of the expansion in a fresh simulation;
@@ -75,7 +76,8 @@ def load_matrix(path):
 
 
 def expand(matrix):
-    """Return the ordered runs: repeats outer, the cells shuffled with the seed inside each repeat.
+    """
+    Return the ordered runs: repeats outer, the cells shuffled with the seed inside each repeat.
 
     One random generator, seeded once, shuffles the cells repeat by repeat, so a matrix with more
     repeats starts with the same order as one with fewer.
@@ -126,7 +128,8 @@ def append_index(path, row):
 
 
 def run_is_done(rows, run, directory=None):
-    """Tell whether a run needs no further attempt: it has a good row, or it was tried twice.
+    """
+    Tell whether a run needs no further attempt: it has a good row, or it was tried twice.
 
     A good row has exit code 0 and a bundle (that exists in directory, when one is given).
     """
@@ -181,7 +184,8 @@ def _results_path(bundle):
 
 
 def parse_bundle(path):
-    """Return the per-run fields of a nav_run bundle.
+    """
+    Return the per-run fields of a nav_run bundle.
 
     Keys: success, collisions, min_clearance, closest_approach, time, valid, reason (why it is
     invalid, else ''), goals, goals_reached, rtf. A bundle that lacks a needed field is invalid
@@ -264,7 +268,8 @@ def wilson(successes, n, z=Z95):
 
 
 def bootstrap_mean(differences, seed=7, resamples=BOOTSTRAP_RESAMPLES):
-    """Bootstrap the mean of paired differences: (mean, low, high) with a 95 % percentile interval.
+    """
+    Bootstrap the mean of paired differences: (mean, low, high) with a 95 % percentile interval.
 
     Fewer than MIN_PAIRS differences give None.
     """
@@ -320,7 +325,8 @@ def cell_stats(records):
 
 
 def paired_differences(records, scenario, controller, a, b):
-    """Return the paired differences A - B of one scenario and controller, matched by repeat.
+    """
+    Return the paired differences A - B of one scenario and controller, matched by repeat.
 
     Only repeats where both runs are valid count. Returns (min clearance differences, collision
     differences, number of repeats).
@@ -345,7 +351,8 @@ def available_comparisons(records, comparisons=DEFAULT_COMPARISONS):
 
 
 def pair_stats(records, comparisons=None, seed=7):
-    """Return the paired rows per scenario, controller and comparison, and the pooled rows.
+    """
+    Return the paired rows per scenario, controller and comparison, and the pooled rows.
 
     Each row: scenario ('all' when pooled), controller, a, b, n_pairs, and for min clearance and
     collisions a (mean, low, high) tuple or None when there are too few pairs.

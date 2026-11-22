@@ -1,4 +1,5 @@
-"""experiment_report: tables and plots of an experiments/<name>/ folder.
+"""
+experiment_report: tables and plots of an experiments/<name>/ folder.
 
     experiment_report experiments/m1/ [--out <dir>]
 
@@ -51,7 +52,8 @@ def nice_ticks(low, high, count=6):
 
 
 def draw_strip(path, title, groups, ylabel, zero_line=False):
-    """Draw a strip plot: one column per group, each valid run a dot, the mean a bar.
+    """
+    Draw a strip plot: one column per group, each valid run a dot, the mean a bar.
 
     groups: list of (label, colour, values). Empty groups are drawn as an empty column.
     """
