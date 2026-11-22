@@ -13,7 +13,7 @@ SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
 EXPECTED_ARGUMENTS = {
     'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-    'navigation', 'controller', 'scenario', 'hazards', 'perception', 'flow_backend',
+    'navigation', 'controller', 'scenario', 'rtf', 'hazards', 'perception', 'flow_backend',
     'flow_device',
 }
 

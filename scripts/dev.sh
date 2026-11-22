@@ -24,19 +24,21 @@ usage: scripts/dev.sh <command>
   run <command>   run one command with ROS and the workspace sourced
   smoke [args]    headless simulation + sim_check; the bundle goes to sim_check_docker_<time>/
                   (args go to sim_check; "--odom-tf wheel" also starts the simulation in wheel mode)
-  perception-smoke [backend] [args]
+  perception-smoke [backend] [--rtf <x>] [args]
                   headless simulation with the flow node (backend default raft_small) + perception_check;
                   the bundle goes to perception_check_docker_<backend>_<time>/
   planner-smoke [arena|maze] [--sim]
                   planning stack + planner_check; offline (static localisation) on the map, or with
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
-  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static]
+  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static] [--rtf <x>]
                   navigation stack in the simulation + nav_run (goal runs scored on ground truth,
                   against the moving obstacles of the crossing, head_on and crowd scenarios);
                   the optional third word starts the hazard layer with the true obstacle velocities
                   (oracle) or positions only (oracle_static); default off; the bundle goes to
                   nav_run_<scenario>_<controller>[_<hazards>]_<time>/
+                  (--rtf <x>, or the RTF environment variable, sets the simulation's target real-time
+                  factor; default 1.0, nothing changed)
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -56,6 +58,24 @@ quoted() {
         out="$out $(printf '%q' "$a")"
     done
     printf '%s' "$out"
+}
+
+# Pull "--rtf <x>" out of the arguments: sets RTF (default: the RTF environment variable, else 1.0)
+# and leaves the other arguments in REST.
+RTF="${RTF:-1.0}"
+REST=()
+extract_rtf() {
+    REST=()
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--rtf" ]; then
+            [ "$#" -ge 2 ] || { echo "--rtf needs a value" >&2; exit 2; }
+            RTF="$2"
+            shift 2
+        else
+            REST+=("$1")
+            shift
+        fi
+    done
 }
 
 case "${1:-}" in
@@ -99,6 +119,8 @@ case "${1:-}" in
         ;;
     perception-smoke)
         shift
+        extract_rtf ${1+"$@"}
+        set -- ${REST[@]+"${REST[@]}"}
         backend="raft_small"
         case "${1:-}" in
             farneback|raft_small|raft_large) backend="$1"; shift ;;
@@ -108,7 +130,7 @@ case "${1:-}" in
         # Start the headless simulation with the flow node, wait up to 90 s for /clock, run
         # perception_check into the bundle, copy the launch log into it, stop the simulation and
         # exit with the check's code.
-        perception_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false perception:=true flow_backend:=$backend > /ws/perception_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools perception_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/perception_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
+        perception_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false perception:=true flow_backend:=$backend rtf:=$RTF > /ws/perception_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools perception_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/perception_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$perception_cmd"
         ;;
     planner-smoke)
@@ -143,6 +165,8 @@ case "${1:-}" in
         ;;
     nav-smoke)
         shift
+        extract_rtf ${1+"$@"}
+        set -- ${REST[@]+"${REST[@]}"}
         if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
             echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static]" >&2
             exit 2
@@ -166,7 +190,7 @@ case "${1:-}" in
         tag=""
         [ "$hazards" = "off" ] || tag="_$hazards"
         bundle="/repo/nav_run_${scenario}_${controller}${tag}_$stamp"
-        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario hazards:=$hazards"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario hazards:=$hazards rtf:=$RTF"
         check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --hazards $hazards --profile docker --out $bundle"
         # Start the navigation stack in the background, run nav_run (it waits for the clock and the
         # navigation action server), copy the launch log into the bundle, stop the stack and exit
