@@ -7,10 +7,31 @@ with the camera pose at both times (map <- camera) it is a world point at both t
 point gives a velocity of zero whatever the robot does.
 """
 
+import warnings
+
 import numpy as np
 
 
-def sample_points(flow, depth0, depth1, intrinsics, stride=4, min_depth=0.3, max_depth=6.0):
+def block_median(values, block, min_valid=8):
+    """
+    Return the median of each block x block tile of a 2-D array, over its finite values.
+
+    A tile with fewer than `min_valid` finite values gives NaN. The result has shape
+    (height // block, width // block); a partial tile at the right or bottom edge is dropped.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    rows, cols = values.shape[0] // block, values.shape[1] // block
+    tiles = values[:rows * block, :cols * block].reshape(rows, block, cols, block)
+    tiles = tiles.transpose(0, 2, 1, 3).reshape(rows, cols, block * block)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        out = np.nanmedian(tiles, axis=-1)
+    out[np.sum(np.isfinite(tiles), axis=-1) < min_valid] = np.nan
+    return out
+
+
+def sample_points(flow, depth0, depth1, intrinsics, stride=4, min_depth=0.3, max_depth=6.0,
+                  block=1):
     """
     Return (p, X0, X1): the pixels and the camera-frame points of the usable flow samples.
 
@@ -18,11 +39,17 @@ def sample_points(flow, depth0, depth1, intrinsics, stride=4, min_depth=0.3, max
     sample is skipped when its target q is outside the image, when D0 at p or D1 at round(q) is not
     finite, or when either depth lies outside [min_depth, max_depth]. p is (N, 2) float64 (u, v),
     X0 and X1 are (N, 3) float64 in the optical frame (z forward).
+
+    With `block` > 1 both depth images and the flow are first reduced to the median of each
+    block x block tile (the depth noise of the sensor would otherwise look like motion); one sample
+    is then taken per tile, at the tile centre, and `stride` is not used.
     """
     fx, fy, cx, cy = intrinsics
     flow = np.asarray(flow, dtype=np.float64)
     depth0 = np.asarray(depth0, dtype=np.float64)
     depth1 = np.asarray(depth1, dtype=np.float64)
+    if block > 1:
+        return _sample_blocks(flow, depth0, depth1, intrinsics, block, min_depth, max_depth)
     height, width = depth0.shape
     rows, cols = np.mgrid[0:height:stride, 0:width:stride]
     u = cols.ravel().astype(np.float64)
@@ -43,6 +70,35 @@ def sample_points(flow, depth0, depth1, intrinsics, stride=4, min_depth=0.3, max
     u, v, qu, qv, d0, d1 = u[ok], v[ok], qu[ok], qv[ok], d0[ok], d1[ok]
     x0 = d0 * np.stack([(u - cx) / fx, (v - cy) / fy, np.ones_like(u)], axis=1).T
     x1 = d1 * np.stack([(qu - cx) / fx, (qv - cy) / fy, np.ones_like(qu)], axis=1).T
+    return np.stack([u, v], axis=1), x0.T, x1.T
+
+
+def _sample_blocks(flow, depth0, depth1, intrinsics, block, min_depth, max_depth):
+    """Return (p, X0, X1) with one sample per block x block tile (see sample_points)."""
+    fx, fy, cx, cy = intrinsics
+    d0 = block_median(depth0, block)
+    d1 = block_median(depth1, block)
+    fu = block_median(flow[:, :, 0], block, 1)
+    fv = block_median(flow[:, :, 1], block, 1)
+    rows, cols = d0.shape
+    jj, ii = np.meshgrid(np.arange(cols), np.arange(rows))
+    u = ((jj + 0.5) * block - 0.5).ravel()
+    v = ((ii + 0.5) * block - 0.5).ravel()
+    qu = u + fu.ravel()
+    qv = v + fv.ravel()
+    tu = np.floor((qu + 0.5) / block)
+    tv = np.floor((qv + 0.5) / block)
+    inside = (np.isfinite(qu) & np.isfinite(qv) & (tu >= 0) & (tu <= cols - 1)
+              & (tv >= 0) & (tv <= rows - 1))
+    tu = np.where(inside, tu, 0).astype(int)
+    tv = np.where(inside, tv, 0).astype(int)
+    a = d0.ravel()
+    b = d1[tv, tu]
+    ok = (inside & np.isfinite(a) & np.isfinite(b) & (a >= min_depth) & (a <= max_depth)
+          & (b >= min_depth) & (b <= max_depth))
+    u, v, qu, qv, a, b = u[ok], v[ok], qu[ok], qv[ok], a[ok], b[ok]
+    x0 = a * np.stack([(u - cx) / fx, (v - cy) / fy, np.ones_like(u)], axis=1).T
+    x1 = b * np.stack([(qu - cx) / fx, (qv - cy) / fy, np.ones_like(qu)], axis=1).T
     return np.stack([u, v], axis=1), x0.T, x1.T
 
 

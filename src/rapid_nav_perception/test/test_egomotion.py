@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 from rapid_nav_perception.egomotion import (
+    block_median,
     moving_mask,
     sample_points,
     transform_points,
@@ -144,3 +145,50 @@ def test_moving_mask_speed_and_height_cuts():
     w1 = np.array([[0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.5], [0, 0, 0.02], [0, 0, 2.5], [0, 0, 0.5]])
     w = np.array([[0.5, 0, 0], [0.1, 0, 0], [5.0, 0, 0], [0.5, 0, 0], [0.5, 0, 0], [0, 0, 1.0]])
     assert list(moving_mask(w1, w)) == [True, False, False, False, False, False]
+
+
+def test_block_median_ignores_outliers_and_nan():
+    a = np.full((8, 8), 2.0)
+    a[0, 0] = 9.0
+    a[1, :4] = np.nan  # 4 NaN in the first tile: 11 finite values remain
+    a[4:8, 4:8] = np.nan
+    a[4, 4] = 1.0  # 15 NaN in the last tile: too few finite values
+    out = block_median(a, 4)
+    assert out.shape == (2, 2)
+    assert out[0, 0] == 2.0
+    assert out[0, 1] == 2.0
+    assert np.isnan(out[1, 1])
+
+
+def test_block_sampling_lines_up_with_the_flow():
+    t0, t1 = pose(), pose(3.0, (0.0, 0.0, 0.1))
+    flow, d0, d1 = render(t1)
+    p, w1, w = velocities(flow, d0, d1, t0, t1, block=4)
+    assert len(p) > 3000
+    assert np.max(np.linalg.norm(w, axis=1)) < 0.05
+
+
+def test_depth_noise_of_the_sensor_stays_below_the_moving_threshold():
+    rng = np.random.default_rng(1)
+    t0, t1 = pose(), pose()
+    flow, d0, d1 = render(t1)
+    d0n = d0 + rng.normal(0.0, 0.007, d0.shape)
+    d1n = d1 + rng.normal(0.0, 0.007, d1.shape)
+    dt = 0.041  # two frames of the real camera
+    speeds = []
+    for kw in ({}, {'block': 4}):
+        _, x0, x1 = sample_points(flow, d0n, d1n, K, **kw)
+        speeds.append(np.median(np.linalg.norm(world_velocities(x0, x1, t0, t1, dt)[1], axis=1)))
+    assert speeds[0] > 0.15
+    assert speeds[1] < 0.08
+
+
+def test_moving_patch_is_found_with_block_sampling():
+    t0, t1 = pose(), pose(3.0, (0.0, 0.0, 0.1))
+    flow, d0, d1 = render(t1, patch=(-0.3, 0.3, -0.6, 0.6), shift=(0.05, 0.0))
+    p, w1, w = velocities(flow, d0, d1, t0, t1, block=4)
+    wx = (p[:, 0] - CX) / FX * PLANE_Z
+    wy = (p[:, 1] - CY) / FY * PLANE_Z
+    inside = (np.abs(wx) <= 0.2) & (np.abs(wy) <= 0.5)
+    assert inside.sum() > 20
+    assert np.median(w[inside, 0]) > 0.4

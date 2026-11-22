@@ -48,8 +48,9 @@ class FlowTracker(Node):
     """Turn FlowFrames into tracked obstacles in the map frame."""
 
     DEFAULTS = {
-        'stride': 4, 'min_depth': 0.3, 'max_depth': 6.0, 'min_point_speed': 0.20,
-        'max_point_speed': 3.0, 'min_height': 0.05, 'max_height': 2.0, 'cell': 0.10,
+        'stride': 4, 'depth_block': 4, 'min_depth': 0.3, 'max_depth': 6.0,
+        'min_point_speed': 0.20, 'min_speed': 0.20, 'max_point_speed': 3.0, 'min_height': 0.05,
+        'max_height': 2.0, 'cell': 0.10,
         'min_samples': 6, 'gate': 0.6, 'alpha': 0.5, 'max_track_age': 1.0, 'confirm': 2,
         'tf_timeout': 0.2,
     }
@@ -104,7 +105,7 @@ class FlowTracker(Node):
         _, x0, x1 = sample_points(
             image_to_array(msg.flow), image_to_array(msg.previous_depth),
             image_to_array(msg.depth), (k[0], k[4], k[2], k[5]), int(p['stride']),
-            p['min_depth'], p['max_depth'])
+            p['min_depth'], p['max_depth'], int(p['depth_block']))
         self.counts['used'] += 1
         if x0.shape[0] == 0:
             self.counts['few'] += 1
@@ -115,6 +116,8 @@ class FlowTracker(Node):
                                p['min_height'], p['max_height'])
             self.moving_samples += int(mask.sum())
             clusters = cluster(w1[mask, :2], w[mask, :2], p['cell'], int(p['min_samples']))
+            # Depth noise gives random velocities; a real mover has a mean velocity of its own.
+            clusters = [c for c in clusters if math.hypot(c['vx'], c['vy']) >= p['min_speed']]
         self.tracker.update(clusters, t1)
         self.publish(msg.header.stamp, t1)
         self.report()
