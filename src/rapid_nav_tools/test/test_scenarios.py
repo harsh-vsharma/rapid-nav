@@ -313,3 +313,19 @@ def test_body_command_level_yaw_and_tilted():
              for r in range(3)]
     assert world == pytest.approx([0.4, 0.3, 0.0])
     assert (wx, wy) == pytest.approx((-0.2, 0.3))
+
+
+def test_covering_radius():
+    from rapid_nav_tools.scenarios import covering_radius
+    assert covering_radius('person') == pytest.approx(0.20)
+    assert covering_radius('cart') == pytest.approx(math.hypot(0.30, 0.20))
+    assert covering_radius('cart') == pytest.approx(0.3606, abs=1e-4)
+
+
+def test_world_velocity_identity_and_yaw():
+    from rapid_nav_tools.scenarios import world_velocity
+    assert world_velocity((0, 0, 0, 1), (0.5, 0.0, 0.0)) == pytest.approx((0.5, 0.0))
+    s = math.sqrt(0.5)
+    # 90 degrees of yaw: body x points along world y
+    assert world_velocity((0, 0, s, s), (0.5, 0.0, 0.0)) == pytest.approx((0.0, 0.5))
+    assert world_velocity((0, 0, s, s), (0.0, 0.5, 0.0)) == pytest.approx((-0.5, 0.0))

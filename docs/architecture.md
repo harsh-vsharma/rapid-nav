@@ -92,7 +92,14 @@ The simulation side of the moving obstacles (S4, details in [navigation.md](navi
 - **Driver.** `obstacle_driver` follows each obstacle's scripted path, starts it when `nav_run` announces its goal on
   `/scenario/goal` (and the robot is close enough, when the scenario says so), and publishes `/scenario/ready` and the
   RViz markers `/scenario/obstacles`.
-- **Ground truth only for scoring.** The obstacles' true poses are read by `nav_run` and RViz, never by the navigation
-  stack: the stack sees them as lidar geometry, which is the baseline.
+- **Ground truth only for scoring, and the named oracle.** The obstacles' true poses are read by `nav_run` and RViz,
+  and by one node of the stack, `oracle_obstacles`, which runs only with `hazards:=oracle` or `hazards:=oracle_static`.
+  With `hazards:=off` the stack sees the obstacles only as lidar geometry, which is the baseline.
 
-The hazard layer (velocity-aware cells from the flow) arrives in S7.
+The hazard layer (S7, details in [navigation.md](navigation.md)):
+
+- **Tracked obstacles.** `rapid_nav_msgs/TrackedObstacleArray` on `/obstacles/tracked`: position, velocity and radius of
+  each tracked obstacle in the map frame. Any velocity source publishes it: the oracle now, the flow-based tracker later.
+- **Hazard layer.** `rapid_nav_hazard::HazardLayer`, a Nav2 costmap layer (prediction core `hazard_core` without ROS
+  dependency) in the global and the local costmap, after the inflation layer: it paints each obstacle's predicted
+  positions over 2 s with a cost that falls with prediction time, at most 252.

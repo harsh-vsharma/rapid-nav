@@ -13,6 +13,7 @@ import yaml
 
 BUILT_IN_MAPS = ('arena', 'maze')
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
+HAZARDS = ('off', 'oracle', 'oracle_static')
 
 
 def generate_launch_description():
@@ -23,6 +24,10 @@ def generate_launch_description():
         DeclareLaunchArgument('controller', default_value='dwa',
                               description="'dwa' (ours), 'dwb' (Nav2's DWB) or 'rpp' "
                                           "(Regulated Pure Pursuit)."),
+        DeclareLaunchArgument('hazards', default_value='off',
+                              description="'off', 'oracle' or 'oracle_static': the hazard layer "
+                                          'in both costmaps (the source is started by the '
+                                          'scenario launch).'),
         DeclareLaunchArgument('use_sim_time', default_value='true',
                               description='Use the simulated clock.'),
         DeclareLaunchArgument('x', default_value='0.0', description='Initial pose x (m).'),
@@ -51,14 +56,20 @@ def set_clock(section, use_sim_time):
             set_clock(value, use_sim_time)
 
 
-def navigation_config(config_path, controller, use_sim_time, bt_xml):
+def navigation_config(config_path, controller, use_sim_time, bt_xml, hazards='off'):
     """
     Return a copy of the navigation YAML for this launch.
 
     The controller server runs one controller, named FollowPath, so the chosen controller's block
     is copied there. The clock is set on every node, because the costmaps run in nodes of their own
     that the launch's use_sim_time does not reach. The BT navigator gets the installed tree.
+    With hazards 'oracle' or 'oracle_static' the hazard layer joins both costmaps after the
+    inflation layer; with 'off' its parameter blocks are removed, so the parameters are exactly
+    those of a stack without the layer.
     """
+    if hazards not in HAZARDS:
+        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
+            hazards))
     with open(config_path, encoding='utf-8') as handle:
         data = yaml.safe_load(handle)
     controller_params = data['controller_server']['ros__parameters']
@@ -66,6 +77,12 @@ def navigation_config(config_path, controller, use_sim_time, bt_xml):
     for name in ('dwa', 'dwb', 'rpp'):
         controller_params.pop('FollowPath_' + name, None)
     data['bt_navigator']['ros__parameters']['default_nav_to_pose_bt_xml'] = bt_xml
+    for costmap in ('global_costmap', 'local_costmap'):
+        section = data[costmap][costmap]['ros__parameters']
+        if hazards == 'off':
+            section.pop('hazard_layer', None)
+        else:
+            section['plugins'] = list(section['plugins']) + ['hazard_layer']
     set_clock(data, use_sim_time)
     descriptor, path = tempfile.mkstemp(prefix='navigation_', suffix='.yaml')
     with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
@@ -79,10 +96,14 @@ def launch_setup(context):
     controller = LaunchConfiguration('controller').perform(context).strip().lower()
     if controller not in CONTROLLERS:
         raise RuntimeError("controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller))
+    hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
+    if hazards not in HAZARDS:
+        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
+            hazards))
     use_sim_time = LaunchConfiguration('use_sim_time').perform(context).strip().lower() == 'true'
     config = navigation_config(
         os.path.join(share, 'config', 'navigation.yaml'), controller, use_sim_time,
-        os.path.join(share, 'behavior_trees', 'navigate_rapid.xml'))
+        os.path.join(share, 'behavior_trees', 'navigate_rapid.xml'), hazards)
     map_yaml = map_yaml_path(LaunchConfiguration('map').perform(context))
     x = float(LaunchConfiguration('x').perform(context))
     y = float(LaunchConfiguration('y').perform(context))

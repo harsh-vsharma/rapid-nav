@@ -1,0 +1,5 @@
+<library path="rapid_nav_hazard_layer">
+  <class type="rapid_nav_hazard::HazardLayer" base_class_type="nav2_costmap_2d::Layer">
+    <description>Paints the predicted positions of tracked obstacles into a costmap.</description>
+  </class>
+</library>

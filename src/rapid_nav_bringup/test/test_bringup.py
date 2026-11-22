@@ -13,7 +13,8 @@ SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
 EXPECTED_ARGUMENTS = {
     'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-    'navigation', 'controller', 'scenario', 'perception', 'flow_backend', 'flow_device',
+    'navigation', 'controller', 'scenario', 'hazards', 'perception', 'flow_backend',
+    'flow_device',
 }
 
 
@@ -55,3 +56,63 @@ def test_sim_launch_declares_the_arguments():
     declared = {entity.name for entity in description.entities
                 if isinstance(entity, DeclareLaunchArgument)}
     assert declared == EXPECTED_ARGUMENTS
+
+
+def load_navigation_launch():
+    """Import navigation.launch.py of the installed navigation package."""
+    from ament_index_python.packages import get_package_share_directory
+    share = get_package_share_directory('rapid_nav_navigation')
+    spec = importlib.util.spec_from_file_location(
+        'navigation_launch', os.path.join(share, 'launch', 'navigation.launch.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, os.path.join(share, 'config', 'navigation.yaml')
+
+
+def written_config(hazards):
+    """Return the YAML navigation_config writes for a hazards value."""
+    module, config = load_navigation_launch()
+    path = module.navigation_config(config, 'dwa', True, 'tree.xml', hazards)
+    try:
+        with open(path, encoding='utf-8') as handle:
+            return yaml.safe_load(handle)
+    finally:
+        os.remove(path)
+
+
+def test_hazards_off_leaves_the_parameters_of_the_plain_stack():
+    """With hazards off the plugin lists are the old ones and no hazard block is written."""
+    data = written_config('off')
+    glob = data['global_costmap']['global_costmap']['ros__parameters']
+    loc = data['local_costmap']['local_costmap']['ros__parameters']
+    assert glob['plugins'] == ['static_layer', 'obstacle_layer', 'inflation_layer']
+    assert loc['plugins'] == ['obstacle_layer', 'inflation_layer']
+    assert 'hazard_layer' not in glob
+    assert 'hazard_layer' not in loc
+
+
+def test_hazards_oracle_adds_the_layer_after_inflation():
+    """With a hazard source the layer is the last plugin of both costmaps, with its block."""
+    for mode in ('oracle', 'oracle_static'):
+        data = written_config(mode)
+        glob = data['global_costmap']['global_costmap']['ros__parameters']
+        loc = data['local_costmap']['local_costmap']['ros__parameters']
+        assert glob['plugins'] == [
+            'static_layer', 'obstacle_layer', 'inflation_layer', 'hazard_layer']
+        assert loc['plugins'] == ['obstacle_layer', 'inflation_layer', 'hazard_layer']
+        for section in (glob, loc):
+            block = section['hazard_layer']
+            assert block['plugin'] == 'rapid_nav_hazard::HazardLayer'
+            assert block['max_cost'] == 252
+            assert block['horizon_s'] == 2.0
+
+
+def test_hazards_rejects_other_values():
+    """An unknown hazards value is an error."""
+    module, config = load_navigation_launch()
+    try:
+        module.navigation_config(config, 'dwa', True, 'tree.xml', 'radar')
+    except RuntimeError as error:
+        assert 'hazards' in str(error)
+    else:
+        raise AssertionError('expected RuntimeError')

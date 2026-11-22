@@ -297,3 +297,31 @@ S1 robot as well. About 15 minutes.
    If PyTorch is not installed, skip this step and say so when you send the files back.
 6. **Send back** the `perception_check_*` folders, `rviz-flow.png`, and the terminal output of the launches with
    errors, together with the machine details from step 9 of the S1 section.
+
+## 14. Hazard layer (S7)
+
+This section runs the crossing scenario with the hazard layer on, fed by the true obstacle velocities (`oracle`). It
+needs the install of step 11. Stop any earlier simulation first.
+
+**a. Start it.**
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=oracle
+```
+
+`ros2 topic echo --once /obstacles/tracked` should print the walker with `source: oracle`.
+
+**b. Run it and look.** In a second terminal, keeping clear of the robot:
+
+```bash
+ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa --hazards oracle
+```
+
+In RViz show the local costmap (`/local_costmap/costmap`). While the walker walks north, a band of cost should extend
+ahead of it, strongest at the walker and fading about 1.5 m ahead, and it should leave nothing behind when the walker
+has passed. Take a screenshot of the local costmap with the band visible as `local-costmap-hazard.png`. The run writes
+`nav_run_crossing_dwa_oracle_<time>/`; its `summary.md` starts with `hazards: oracle`.
+
+**What to send back:** `local-costmap-hazard.png`, the `nav_run_crossing_dwa_oracle_*` folder, one sentence on whether the
+band was ahead of the walker and whether anything stayed behind, and any error printed. The numbers measured on Docker are
+in [navigation.md](navigation.md).
