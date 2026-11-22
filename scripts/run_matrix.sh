@@ -13,7 +13,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIN_FREE_GIB="${MIN_FREE_GIB:-3}"
-MIN_FREE_KB=$((MIN_FREE_GIB * 1024 * 1024))
+MIN_FREE_KB="$(awk -v g="$MIN_FREE_GIB" 'BEGIN { printf "%d", g * 1024 * 1024 }')"
 POLL_S=5
 
 if [ "$#" -ne 1 ]; then
