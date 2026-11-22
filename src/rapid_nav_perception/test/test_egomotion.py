@@ -5,8 +5,10 @@ import math
 import numpy as np
 from rapid_nav_perception.egomotion import (
     block_median,
+    block_texture,
     moving_mask,
     sample_points,
+    texture_mask,
     transform_points,
     world_velocities,
 )
@@ -192,3 +194,17 @@ def test_moving_patch_is_found_with_block_sampling():
     inside = (np.abs(wx) <= 0.2) & (np.abs(wy) <= 0.5)
     assert inside.sum() > 20
     assert np.median(w[inside, 0]) > 0.4
+
+
+def test_texture_gate_drops_flat_and_straight_edges_and_keeps_a_checkerboard():
+    rows, cols = np.mgrid[0:H, 0:W]
+    flat = np.full((H, W), 120.0)
+    edge = np.where(cols < 160, 40.0, 200.0)  # one straight vertical edge
+    checker = np.where(((rows // 4) + (cols // 4)) % 2 == 0, 40.0, 200.0)
+    p = np.stack([cols[::4, ::4].ravel(), rows[::4, ::4].ravel()], axis=1).astype(float)
+    assert np.all(block_texture(flat, 4) == 0.0)
+    assert texture_mask(p, block_texture(flat, 4), 4, 1.0).sum() == 0
+    assert texture_mask(p, block_texture(edge, 4), 4, 1.0).sum() == 0
+    kept = texture_mask(p, block_texture(checker, 4), 4, 1.0)
+    # the checkerboard has a corner in every 4-pixel tile except along the image border
+    assert kept.mean() > 0.95

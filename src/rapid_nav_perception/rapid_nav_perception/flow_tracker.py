@@ -7,6 +7,7 @@ floor and tracks them over time (tracking.py). It reads only the camera stream a
 truth.
 """
 
+import collections
 import math
 import sys
 import time
@@ -14,14 +15,18 @@ import time
 import numpy as np
 from rapid_nav_msgs.msg import FlowFrame, TrackedObstacle, TrackedObstacleArray
 from rapid_nav_perception.conversions import image_to_array
-from rapid_nav_perception.egomotion import moving_mask, sample_points, world_velocities
+from rapid_nav_perception.egomotion import (
+    block_texture, moving_mask, sample_points, texture_mask, world_velocities)
 from rapid_nav_perception.tracking import cluster, Tracker
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
+from sensor_msgs.msg import Image
 from tf2_ros import Buffer, TransformException, TransformListener
 
+IMAGE_HISTORY = 12
 REPORT_PERIOD_S = 5.0
 
 
@@ -52,7 +57,7 @@ class FlowTracker(Node):
         'min_point_speed': 0.20, 'min_speed': 0.20, 'max_point_speed': 3.0, 'min_height': 0.05,
         'max_height': 2.0, 'cell': 0.10,
         'min_samples': 6, 'gate': 0.6, 'alpha': 0.5, 'max_track_age': 1.0, 'confirm': 2,
-        'tf_timeout': 0.2,
+        'tf_timeout': 0.2, 'min_texture': 6.0,
     }
 
     def __init__(self):
@@ -71,7 +76,11 @@ class FlowTracker(Node):
         self.pub = self.create_publisher(
             TrackedObstacleArray, self.get_parameter('topic').value, 10)
         self.create_subscription(FlowFrame, '/perception/flow_frame', self.on_frame, 2)
-        self.counts = {'frames': 0, 'used': 0, 'no_tf': 0, 'bad_dt': 0, 'few': 0}
+        self.images = collections.deque(maxlen=IMAGE_HISTORY)
+        if self.p['min_texture'] > 0.0:
+            self.create_subscription(
+                Image, '/camera/image', self.on_image, qos_profile_sensor_data)
+        self.counts = {'frames': 0, 'used': 0, 'no_tf': 0, 'bad_dt': 0, 'few': 0, 'no_image': 0}
         self.moving_samples = 0
         self.last_report = time.monotonic()
 
@@ -85,6 +94,25 @@ class FlowTracker(Node):
         except TransformException:
             return None
         return matrix_of(t.transform)
+
+    def on_image(self, msg):
+        """Keep the grey image (processing size not known yet: the full frame) of recent frames."""
+        grey = image_to_array(msg).astype(np.float64).mean(axis=2)
+        self.images.append((stamp_seconds(msg.header.stamp), grey))
+
+    def texture_of(self, stamp, shape, tile):
+        """Return the structure-tensor texture per tile of the image nearest the stamp, or None."""
+        if not self.images:
+            return None
+        seconds = stamp_seconds(stamp)
+        when, grey = min(self.images, key=lambda e: abs(e[0] - seconds))
+        if abs(when - seconds) > 0.05:
+            return None
+        factor = max(1, grey.shape[0] // shape[0])
+        if factor > 1:
+            h, w = shape[0] * factor, shape[1] * factor
+            grey = grey[:h, :w].reshape(shape[0], factor, shape[1], factor).mean(axis=(1, 3))
+        return block_texture(grey, tile)
 
     def on_frame(self, msg):
         """Process one FlowFrame and publish the confirmed tracks."""
@@ -105,10 +133,20 @@ class FlowTracker(Node):
             return
         k = msg.camera_info.k
         p = self.p
-        _, x0, x1 = sample_points(
-            image_to_array(msg.flow), image_to_array(msg.previous_depth),
-            image_to_array(msg.depth), (k[0], k[4], k[2], k[5]), int(p['stride']),
-            p['min_depth'], p['max_depth'], int(p['depth_block']))
+        flow = image_to_array(msg.flow)
+        block = int(p['depth_block'])
+        pix, x0, x1 = sample_points(
+            flow, image_to_array(msg.previous_depth), image_to_array(msg.depth),
+            (k[0], k[4], k[2], k[5]), int(p['stride']), p['min_depth'], p['max_depth'], block)
+        if p['min_texture'] > 0.0:
+            # Where the previous image has no texture in two directions the flow is a guess.
+            tile = block if block > 1 else int(p['stride'])
+            texture = self.texture_of(msg.previous_stamp, flow.shape[:2], tile)
+            if texture is None:
+                self.counts['no_image'] += 1
+                return
+            keep = texture_mask(pix, texture, tile, p['min_texture'])
+            x0, x1 = x0[keep], x1[keep]
         self.counts['used'] += 1
         if x0.shape[0] == 0:
             self.counts['few'] += 1
@@ -149,9 +187,10 @@ class FlowTracker(Node):
         self.last_report = now
         c = self.counts
         self.get_logger().info(
-            'flow_tracker: frames={} used={} skipped_no_tf={} skipped_bad_dt={} no_samples={} '
-            'moving_samples={} tracks={}'.format(
-                c['frames'], c['used'], c['no_tf'], c['bad_dt'], c['few'], self.moving_samples,
+            'flow_tracker: frames={} used={} skipped_no_tf={} skipped_bad_dt={} '
+            'no_image={} no_samples={} moving_samples={} tracks={}'.format(
+                c['frames'], c['used'], c['no_tf'], c['bad_dt'], c['no_image'], c['few'],
+                self.moving_samples,
                 len(self.tracker.confirmed())))
 
 

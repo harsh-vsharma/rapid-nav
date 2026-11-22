@@ -30,6 +30,34 @@ def block_median(values, block, min_valid=8):
     return out
 
 
+def block_texture(gray, block):
+    """
+    Return the smaller eigenvalue of the 2 x 2 structure tensor of a grey image, per tile.
+
+    The gradients (central differences, grey levels per pixel) are squared and summed over each
+    block x block tile; the smaller eigenvalue is large only where the image varies in two
+    directions, i.e. where optical flow is well defined (a flat patch gives 0, a straight edge
+    gives 0 as well: the aperture problem). The result has shape (height // block, width // block).
+    """
+    gray = np.asarray(gray, dtype=np.float64)
+    gy, gx = np.gradient(gray)
+    rows, cols = gray.shape[0] // block, gray.shape[1] // block
+
+    def tile_sum(values):
+        tiles = values[:rows * block, :cols * block].reshape(rows, block, cols, block)
+        return tiles.sum(axis=(1, 3))
+
+    a, b, c = tile_sum(gx * gx), tile_sum(gx * gy), tile_sum(gy * gy)
+    return 0.5 * (a + c) - np.sqrt((0.5 * (a - c)) ** 2 + b ** 2)
+
+
+def texture_mask(p, texture, block, min_texture):
+    """Return a mask of the samples p (N, 2) of (u, v) whose tile has texture >= min_texture."""
+    iu = np.clip((p[:, 0] // block).astype(int), 0, texture.shape[1] - 1)
+    iv = np.clip((p[:, 1] // block).astype(int), 0, texture.shape[0] - 1)
+    return texture[iv, iu] >= min_texture
+
+
 def sample_points(flow, depth0, depth1, intrinsics, stride=4, min_depth=0.3, max_depth=6.0,
                   block=1):
     """
