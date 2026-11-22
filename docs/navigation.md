@@ -454,6 +454,11 @@ collision (nor did the oracle). The tracks it feeds are far from perfect (about 
 most two thirds of the in-view obstacles detected); the false tracks sit mostly on far walls where the costmap is
 already high, so they cost little here. The matrix with repeats is the experiment of S9.
 
+## Repeated runs
+
+The results above are single runs. The repeated experiment matrices, the runner and the report with intervals
+are described in [experiments.md](experiments.md).
+
 ## Tools
 
 - **`path_viewer`** answers each goal from RViz ("2D Goal Pose") with every planner, from the robot's current pose. Each
