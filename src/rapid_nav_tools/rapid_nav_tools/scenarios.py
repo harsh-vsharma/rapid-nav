@@ -17,6 +17,8 @@ MASS_KG = 1000.0
 TILT_INERTIA = 1.0e5
 TILT_GAIN = 2.0
 FLOOR_CLEARANCE_M = 0.02
+# The texture the camera can follow; the flat colour stays as the fallback (ambient and diffuse).
+TEXTURE_URI = 'model://rapid_nav_movers/materials/textures/mover.png'
 
 SHAPES = {
     'person': {'kind': 'cylinder', 'radius': 0.20, 'height': 1.70, 'colour': (0.85, 0.35, 0.10)},
@@ -101,7 +103,8 @@ def obstacle_sdf(name, shape, gravity=False):
         '<ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>'
         '<collision name="collision"><geometry>{geometry}</geometry></collision>'
         '<visual name="visual"><geometry>{geometry}</geometry>'
-        '<material><ambient>{colour}</ambient><diffuse>{colour}</diffuse></material></visual>'
+        '<material><ambient>{colour}</ambient><diffuse>{colour}</diffuse>'
+        '<pbr><metal><albedo_map>{texture}</albedo_map></metal></pbr></material></visual>'
         '</link>'
         '<plugin filename="gz-sim-velocity-control-system" '
         'name="gz::sim::systems::VelocityControl">'
@@ -117,7 +120,7 @@ def obstacle_sdf(name, shape, gravity=False):
         '</model></sdf>'
     ).format(name=name, gravity='true' if gravity else 'false', mass=MASS_KG,
              ixx=ixx, iyy=iyy, izz=izz, geometry=geometry, colour=colour,
-             cmd=cmd_topic, odom=odom_topic)
+             cmd=cmd_topic, odom=odom_topic, texture=TEXTURE_URI)
 
 
 MODES = ('once', 'back_and_forth', 'loop')
