@@ -24,7 +24,7 @@ moving obstacles with their scenarios are in testing; the other parts are planne
 | Dynamic scenarios: moving obstacles and the geometry baseline | S4 | in testing |
 | Navigation baseline: global planning | S5 | in testing |
 | Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
-| Hazard map to costmap | S7 | planned |
+| Hazard layer: velocity-aware costmap from tracked obstacles (oracle source) | S7 | in testing |
 | Adaptive flow | S8 | planned |
 | Experiments | S9 | planned |
 
@@ -124,8 +124,11 @@ ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
 ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
 ```
 
+Add `hazards:=oracle` to the launch (and `--hazards oracle` to `nav_run`) to paint the predicted positions of the obstacles
+into the costmaps from their true velocities, or `hazards:=oracle_static` for their current positions only.
+
 The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
-steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10, 11 and 12).
+steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 to 14).
 
 Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is installed; see
 [docs/perception.md](docs/perception.md)):

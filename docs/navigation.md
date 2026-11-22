@@ -333,6 +333,95 @@ every row shown.
 - One run of a pass is not enough to rank controllers: the outcome depends on small differences in timing around a
   clearance of zero.
 
+## Hazard layer
+
+The lidar obstacle layer knows where things are now. The hazard layer adds where moving things will be, over a short
+horizon, so the costmaps carry a band of cost ahead of each mover. It does not know where the motion comes from: any
+velocity source publishes the same message.
+
+**The message.** `rapid_nav_msgs/TrackedObstacleArray` on `/obstacles/tracked`: a header (stamp when the positions are
+valid, frame `map`), a `source` string and a list of `TrackedObstacle` (`id`, `position`, `velocity` in the header frame,
+`radius` of a circle that covers the outline, `confidence`).
+
+**The oracle and its ablation.** `oracle_obstacles` reads the true pose and velocity of every obstacle of the scenario from
+Gazebo's odometry and publishes them at 10 Hz (sim time); it is the only node of the stack that reads
+`/model/<name>/odometry`, and it runs only with `hazards:=oracle` or `hazards:=oracle_static`. It is the upper bound:
+perfect perception. With `oracle_static` the same node publishes zero velocities, so the layer paints the disks at the
+current positions only. `oracle` minus `oracle_static` is the effect of knowing the motion; `oracle_static` minus `off` is
+the effect of a bigger, softer obstacle. With `hazards:=off` (the default) the stack is the S4 stack, with the same
+parameters.
+
+**Prediction and cost.** For each obstacle the layer paints disks at its predicted centres `p + v (age + t)` for
+`t = 0, 0.25, ... 2.0 s` (`horizon_s`, `time_step_s`), where `age` is the age of the message. The radius is the
+obstacle's radius + the robot radius (0.25 m) + a margin of 0.05 m, because the controllers test the robot's centre
+against the costs. The cost of a disk falls with prediction time from `max_cost` 252 at `t = 0` to `min_cost` 60 at the
+horizon; a cell takes the highest cost of the disks that cover it. An obstacle slower than 0.05 m/s gets only the first
+disk. The maximum is 252 on purpose: 253 and 254 make every controller reject a cell, so a prediction is never a wall.
+A message older than 0.5 s is ignored. The parameters are fixed for S7.
+
+**Where it sits.** In the global costmap (frame `map`) and the local costmap (frame `odom`), as the last plugin after
+`inflation_layer`. It paints straight into the master grid (it raises cells, never lowers them), transforms positions to
+the costmap's frame with the latest transform and rotates the velocities, and includes last cycle's painted area in its
+bounds so that nothing stays behind.
+
+**How each controller uses graded costs.** Our DWA rejects a trajectory at cost 253 and above and otherwise adds the cost
+to its score (weight 8). DWB's `BaseObstacle` does the same with its own scale. RPP uses costs only to detect a collision
+(253 and above), so the graded hazard cost reaches it only through the global plan (the planner's cost weight is 2.0 and
+it replans at 1 Hz).
+
+**Running it.**
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=oracle
+scripts/dev.sh nav-smoke crossing dwb oracle
+```
+
+`nav_run --hazards` records the choice in `environment.txt`, `results.json` and `summary.md`. A run with the layer is
+named `nav_run_<scenario>_<controller>_<hazards>_<time>`.
+
+### First results (S7)
+
+The three S4 scenarios with the three controllers, one run per cell, under `oracle` and `oracle_static`, beside the S4
+baseline (`off`). Same machine and conditions as the S4 baseline; all scenario-validity rows pass. Nothing was tuned.
+
+| scenario | controller | hazards | goals reached | collisions | min dynamic clearance (m) | closest approach (m) | recoveries | mean time per goal (s) | validity |
+|---|---|---|---|---|---|---|---|---|---|
+| crossing | dwa | off (S4) | 3/3 | 1 | -0.052 | 0.40 | - | 14.5 | PASS |
+| crossing | dwa | oracle | 2/3 | 1 | -0.060 | 0.39 | 25 | 79.5 | PASS |
+| crossing | dwa | oracle_static | 3/3 | 1 | -0.052 | 0.40 | 8 | 22.1 | PASS |
+| crossing | dwb | off (S4) | 3/3 | 1 | -0.052 | 0.40 | - | 13.9 | PASS |
+| crossing | dwb | oracle | 3/3 | 2 | -0.056 | 0.39 | 14 | 18.6 | PASS |
+| crossing | dwb | oracle_static | 3/3 | 1 | -0.052 | 0.40 | 4 | 14.0 | PASS |
+| crossing | rpp | off (S4) | 3/3 | 0 | 0.158 | 0.61 | - | 15.6 | PASS |
+| crossing | rpp | oracle | 3/3 | 0 | 0.270 | 0.72 | 0 | 15.0 | PASS |
+| crossing | rpp | oracle_static | 3/3 | 0 | 0.172 | 0.62 | 4 | 14.9 | PASS |
+| head_on | dwa | off (S4) | 2/2 | 1 | -0.051 | 0.40 | - | 16.9 | PASS |
+| head_on | dwa | oracle | 2/2 | 1 | -0.008 | 0.44 | 3 | 15.1 | PASS |
+| head_on | dwa | oracle_static | 2/2 | 1 | -0.050 | 0.40 | 6 | 17.2 | PASS |
+| head_on | dwb | off (S4) | 2/2 | 1 | -0.051 | 0.40 | - | 16.3 | PASS |
+| head_on | dwb | oracle | 2/2 | 1 | -0.018 | 0.43 | 3 | 16.0 | PASS |
+| head_on | dwb | oracle_static | 2/2 | 1 | -0.033 | 0.42 | 4 | 21.1 | PASS |
+| head_on | rpp | off (S4) | 2/2 | 1 | -0.007 | 0.44 | - | 19.0 | PASS |
+| head_on | rpp | oracle | 2/2 | 1 | -0.009 | 0.44 | 6 | 19.4 | PASS |
+| head_on | rpp | oracle_static | 2/2 | 1 | -0.006 | 0.44 | 6 | 19.1 | PASS |
+| crowd | dwa | off (S4) | 3/3 | 2 | -0.050 | 0.50 | - | 18.0 | PASS |
+| crowd | dwa | oracle | 2/3 | 3 | -0.054 | 0.43 | 4 | 15.2 | PASS |
+| crowd | dwa | oracle_static | 2/3 | 1 | -0.058 | 0.49 | 11 | 15.1 | PASS |
+| crowd | dwb | off (S4) | 3/3 | 1 | -0.055 | 0.40 | - | 14.2 | PASS |
+| crowd | dwb | oracle | 3/3 | 0 | 0.005 | 0.45 | 0 | 14.0 | PASS |
+| crowd | dwb | oracle_static | 3/3 | 3 | -0.058 | 0.39 | 9 | 17.3 | PASS |
+| crowd | rpp | off (S4) | 3/3 | 1 | -0.038 | 0.53 | - | 17.7 | PASS |
+| crowd | rpp | oracle | 3/3 | 2 | -0.010 | 0.55 | 9 | 19.0 | PASS |
+| crowd | rpp | oracle_static | 2/3 | 2 | -0.056 | 0.45 | 17 | 19.9 | PASS |
+
+These are single runs and they are information, not a ranking. S4 showed that head-on and crossing outcomes sit around a
+clearance of zero and change from run to run (two identical runs of our DWA differed), so differences of a few
+centimetres or of one collision are within that noise. What the table does show: the stack runs to the end with the layer
+on; the oracle band shifts the head-on clearances from about -0.05 m to about -0.01 m for all three controllers; RPP
+passes the crossing further away (0.27 m against 0.16 m); and the layer is not free: four runs (three of them our DWA)
+miss a goal that the baseline reached, which is a finding to look into and not a tuned result. The repeated matrix and
+the ranking are the experiments of S9.
+
 ## Tools
 
 - **`path_viewer`** answers each goal from RViz ("2D Goal Pose") with every planner, from the robot's current pose. Each
