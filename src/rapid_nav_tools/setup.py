@@ -30,6 +30,7 @@ setup(
             'perception_check = rapid_nav_tools.perception_check:main',
             'oracle_obstacles = rapid_nav_tools.oracle_obstacles:main',
             'track_check = rapid_nav_tools.track_check:main',
+            'experiment_report = rapid_nav_tools.experiment_report:main',
         ],
     },
 )
