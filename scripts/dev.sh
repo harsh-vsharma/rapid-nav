@@ -43,6 +43,11 @@ usage: scripts/dev.sh <command>
                   the camera-based hazards (RAFT flow + flow_tracker) in the simulation with the dwb
                   controller; track_check scores the flow tracks against the obstacles' true poses;
                   the bundle goes to track_check_<scenario>_<time>/ (the goal run's own bundle in it)
+  experiment <matrix.yaml|pilot|m1|m2>
+                  run an experiment matrix (every run in a fresh simulation, resumable: run the same
+                  command again after an interruption); the bundles and index.csv go to
+                  experiments/<name>/; Ctrl+C or a STOP file there ends it after the current run
+                  (the CONTAINER_NAME environment variable names the container of a run)
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -51,7 +56,7 @@ EOF
 # Run one shell command line inside the image, with ROS and the workspace sourced.
 in_container() {
     local cmd="$1"
-    docker run --rm $TTY -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \
+    docker run --rm $TTY ${CONTAINER_NAME:+--name "$CONTAINER_NAME"} -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \
         bash -c "source /opt/ros/jazzy/setup.bash && { [ ! -f /ws/install/setup.bash ] || source /ws/install/setup.bash; } && $cmd"
 }
 
@@ -221,6 +226,10 @@ case "${1:-}" in
         # The recorder listens while nav_run drives the goals; the stop file ends the recording.
         smoke_cmd="mkdir -p $bundle; rm -f /ws/track_stop; $launch_cmd > /ws/track_launch.log 2>&1 & launch_pid=\$!; ros2 run rapid_nav_tools track_check --scenario $scenario --out $bundle --stop-file /ws/track_stop > $bundle/track_check.log 2>&1 & check_pid=\$!; ros2 run rapid_nav_tools nav_run --scenario $scenario --controller dwb --hazards flow --profile docker --out $bundle/nav_run > $bundle/nav_run.log 2>&1; rc=\$?; sleep 5; touch /ws/track_stop; wait \$check_pid; cp /ws/track_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$smoke_cmd"
+        ;;
+    experiment)
+        shift
+        exec "$REPO/scripts/run_matrix.sh" ${1+"$@"}
         ;;
     shell)
         docker run --rm -it -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \

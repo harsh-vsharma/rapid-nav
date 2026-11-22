@@ -49,3 +49,6 @@ rosbag2_*/
 planner_check_*/
 perception_check_*/
 nav_run_*/
+
+# Experiment results (scripts/run_matrix.sh)
+/experiments/
