@@ -23,6 +23,7 @@ venv/
 # Outputs of the simulation checks and experiments
 sim_check_*/
 perception_check_*/
+track_check_*/
 /results/
 
 # Files the simulation check procedure writes to the repository root (docs/sim-checks.md)

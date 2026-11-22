@@ -76,7 +76,7 @@ CLOSE_ENCOUNTER_M = 0.30
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                      reliability=ReliabilityPolicy.RELIABLE)
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
-HAZARDS = ('off', 'oracle', 'oracle_static')
+HAZARDS = ('off', 'oracle', 'oracle_static', 'flow')
 ROBOT_RADIUS_M = 0.25
 GOAL_XY_TOLERANCE_M = 0.25
 GOAL_YAW_TOLERANCE_RAD = 0.35
@@ -294,6 +294,8 @@ class NavRun(Node):
         self.plan = None
         self.plan_history = []
         self.clock_seen = False
+        self.clock_first = None
+        self.clock_last = None
         self.feedback = {'recoveries': 0, 'distance_remaining': None}
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -335,9 +337,22 @@ class NavRun(Node):
         self.goal_pub.publish(Int32(data=number))
         self.spin_for_sim(0.1)
 
-    def _on_clock(self, _message):
-        """Note that the simulated clock is running."""
+    def _on_clock(self, message):
+        """Note that the simulated clock is running; keep its first and last (sim, wall) pair."""
         self.clock_seen = True
+        pair = (message.clock.sec + message.clock.nanosec * 1e-9, time.monotonic())
+        if self.clock_first is None:
+            self.clock_first = pair
+        self.clock_last = pair
+
+    def measured_rtf(self):
+        """Return the real-time factor of the run (sim seconds per wall second), or None."""
+        if self.clock_first is None or self.clock_last is None:
+            return None
+        wall = self.clock_last[1] - self.clock_first[1]
+        if wall < 5.0:
+            return None
+        return (self.clock_last[0] - self.clock_first[0]) / wall
 
     def _on_odometry(self, key):
         """Return the callback that keeps the (x, y, yaw) of an odometry topic."""
@@ -541,10 +556,13 @@ def build_checks(controller, goals, dynamic=False):
     ]
 
 
-def summary_text(scenario, controller, checks, goals, validity=(), hazards='off'):
+def summary_text(scenario, controller, checks, goals, validity=(), hazards='off', rtf=None):
     """Return summary.md: the validity table, the check table and the per-goal table."""
     lines = ['# nav_run: {} with {}'.format(scenario, controller), '',
-             'hazards: {}'.format(hazards), '']
+             'hazards: {}'.format(hazards)]
+    if rtf is not None:
+        lines.append('real-time factor (measured): {:.2f}'.format(rtf))
+    lines.append('')
     if validity:
         lines += ['## Scenario validity (did it play out as scripted)', '',
                   '| check | value | expected | verdict |', '|---|---|---|---|']
@@ -765,10 +783,15 @@ def main(argv=None):
         validity = validity_rows(args.scenario, scenario,
                                  {t['name']: t for t in final_tracks}, robot_times, robot_xy,
                                  encounter, ROBOT_RADIUS_M)
+    rtf = node.measured_rtf()
+    if rtf is not None:
+        with open(os.path.join(out_dir, 'environment.txt'), 'a', encoding='utf-8') as handle:
+            handle.write('real-time factor (measured): {:.2f}\n'.format(rtf))
     results = {
         'scenario': args.scenario,
         'controller': args.controller,
         'hazards': args.hazards,
+        'rtf': rtf,
         'profile': args.profile,
         'goal_timeout_s': args.goal_timeout,
         'checks': checks,
@@ -780,7 +803,8 @@ def main(argv=None):
     }
     with open(os.path.join(out_dir, 'results.json'), 'w', encoding='utf-8') as handle:
         json.dump(results, handle, indent=1)
-    summary = summary_text(args.scenario, args.controller, checks, goals, validity, args.hazards)
+    summary = summary_text(args.scenario, args.controller, checks, goals, validity, args.hazards,
+                           rtf)
     with open(os.path.join(out_dir, 'summary.md'), 'w', encoding='utf-8') as handle:
         handle.write(summary)
     draw_picture(os.path.join(out_dir, 'trajectories_{}.png'.format(args.scenario)),

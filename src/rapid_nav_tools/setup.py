@@ -26,6 +26,7 @@ setup(
             'obstacle_driver = rapid_nav_tools.obstacle_driver:main',
             'perception_check = rapid_nav_tools.perception_check:main',
             'oracle_obstacles = rapid_nav_tools.oracle_obstacles:main',
+            'track_check = rapid_nav_tools.track_check:main',
         ],
     },
 )

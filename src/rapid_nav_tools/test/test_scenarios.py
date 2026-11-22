@@ -329,3 +329,12 @@ def test_world_velocity_identity_and_yaw():
     # 90 degrees of yaw: body x points along world y
     assert world_velocity((0, 0, s, s), (0.5, 0.0, 0.0)) == pytest.approx((0.0, 0.5))
     assert world_velocity((0, 0, s, s), (0.0, 0.5, 0.0)) == pytest.approx((-0.5, 0.0))
+
+
+def test_sdf_has_the_texture_and_keeps_the_flat_colour():
+    from rapid_nav_tools.scenarios import TEXTURE_URI
+    for shape in ('person', 'cart'):
+        root = ET.fromstring(obstacle_sdf('m', shape))
+        material = root.find('.//visual/material')
+        assert material.find('ambient') is not None and material.find('diffuse') is not None
+        assert material.find('pbr/metal/albedo_map').text == TEXTURE_URI

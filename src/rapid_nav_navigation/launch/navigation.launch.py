@@ -13,7 +13,7 @@ import yaml
 
 BUILT_IN_MAPS = ('arena', 'maze')
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
-HAZARDS = ('off', 'oracle', 'oracle_static')
+HAZARDS = ('off', 'oracle', 'oracle_static', 'flow')
 
 
 def generate_launch_description():
@@ -25,7 +25,7 @@ def generate_launch_description():
                               description="'dwa' (ours), 'dwb' (Nav2's DWB) or 'rpp' "
                                           "(Regulated Pure Pursuit)."),
         DeclareLaunchArgument('hazards', default_value='off',
-                              description="'off', 'oracle' or 'oracle_static': the hazard layer "
+                              description="'off', 'oracle', 'oracle_static' or 'flow': the hazard layer "
                                           'in both costmaps (the source is started by the '
                                           'scenario launch).'),
         DeclareLaunchArgument('use_sim_time', default_value='true',
@@ -63,12 +63,12 @@ def navigation_config(config_path, controller, use_sim_time, bt_xml, hazards='of
     The controller server runs one controller, named FollowPath, so the chosen controller's block
     is copied there. The clock is set on every node, because the costmaps run in nodes of their own
     that the launch's use_sim_time does not reach. The BT navigator gets the installed tree.
-    With hazards 'oracle' or 'oracle_static' the hazard layer joins both costmaps after the
+    With hazards 'oracle', 'oracle_static' or 'flow' the hazard layer joins both costmaps after the
     inflation layer; with 'off' its parameter blocks are removed, so the parameters are exactly
     those of a stack without the layer.
     """
     if hazards not in HAZARDS:
-        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
+        raise RuntimeError("hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
             hazards))
     with open(config_path, encoding='utf-8') as handle:
         data = yaml.safe_load(handle)
@@ -98,7 +98,7 @@ def launch_setup(context):
         raise RuntimeError("controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller))
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
     if hazards not in HAZARDS:
-        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
+        raise RuntimeError("hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
             hazards))
     use_sim_time = LaunchConfiguration('use_sim_time').perform(context).strip().lower() == 'true'
     config = navigation_config(

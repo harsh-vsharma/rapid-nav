@@ -13,7 +13,7 @@ SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
 EXPECTED_ARGUMENTS = {
     'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-    'navigation', 'controller', 'scenario', 'hazards', 'perception', 'flow_backend',
+    'navigation', 'controller', 'scenario', 'rtf', 'hazards', 'perception', 'flow_backend',
     'flow_device',
 }
 
@@ -93,7 +93,7 @@ def test_hazards_off_leaves_the_parameters_of_the_plain_stack():
 
 def test_hazards_oracle_adds_the_layer_after_inflation():
     """With a hazard source the layer is the last plugin of both costmaps, with its block."""
-    for mode in ('oracle', 'oracle_static'):
+    for mode in ('oracle', 'oracle_static', 'flow'):
         data = written_config(mode)
         glob = data['global_costmap']['global_costmap']['ros__parameters']
         loc = data['local_costmap']['local_costmap']['ros__parameters']

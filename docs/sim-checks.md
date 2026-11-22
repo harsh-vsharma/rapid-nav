@@ -325,3 +325,38 @@ has passed. Take a screenshot of the local costmap with the band visible as `loc
 **What to send back:** `local-costmap-hazard.png`, the `nav_run_crossing_dwa_oracle_*` folder, one sentence on whether the
 band was ahead of the walker and whether anything stayed behind, and any error printed. The numbers measured on Docker are
 in [navigation.md](navigation.md).
+
+## 15. Camera-based obstacle tracks (S3)
+
+This section runs the crossing scenario with the hazard layer fed by the robot's own camera (`hazards:=flow`), and scores
+the tracks against the true obstacle poses. It needs the install of step 11 and the RAFT weights of the perception
+section. With a CUDA GPU PyTorch uses it and the simulation can run faster: try `--rtf 1.0` and read how many frame pairs
+per simulated second the `flow_node` status line reports (the Docker CPU runs get 3 to 4 at `rtf` 0.25, which tracks the
+walkers only roughly). Without a GPU keep `--rtf 0.25`; a run then takes a few minutes of wall time. Stop any earlier simulation
+first.
+
+**a. Score the tracks.**
+
+```bash
+scripts/dev.sh track-smoke crossing --rtf 0.25
+```
+
+(or, natively, `ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=flow rtf:=0.25`
+with `ros2 run rapid_nav_tools track_check --scenario crossing --out <folder>` and `nav_run --hazards flow` in two more
+terminals.) It writes `track_check_crossing_<time>/` with `summary.md`, `results.json`, a picture of true and tracked
+paths and the goal run's own bundle. `ros2 topic echo --once /obstacles/tracked` during the run prints tracks with
+`source: flow`.
+
+**b. Navigate with it.**
+
+```bash
+scripts/dev.sh nav-smoke crossing dwb flow --rtf 0.25
+```
+
+The `summary.md` of the run starts with `hazards: flow` and lists the measured real-time factor; every scenario-validity
+row should pass.
+
+**What to send back:** the `track_check_crossing_*` folder (its `summary.md` and `tracks_crossing.png`), the
+`nav_run_crossing_dwb_flow_*` folder, whether a CUDA GPU was used and the `flow_node` status line (pairs per second), and
+any error printed. The numbers measured on Docker are in [perception.md](perception.md) and
+[navigation.md](navigation.md).

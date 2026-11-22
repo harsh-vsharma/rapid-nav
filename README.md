@@ -25,6 +25,7 @@ moving obstacles with their scenarios are in testing; the other parts are planne
 | Navigation baseline: global planning | S5 | in testing |
 | Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
 | Hazard layer: velocity-aware costmap from tracked obstacles (oracle source) | S7 | in testing |
+| Camera-based obstacle tracks: the flow source of the hazard layer | S3 | in testing |
 | Adaptive flow | S8 | planned |
 | Experiments | S9 | planned |
 
@@ -125,10 +126,12 @@ ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
 ```
 
 Add `hazards:=oracle` to the launch (and `--hazards oracle` to `nav_run`) to paint the predicted positions of the obstacles
-into the costmaps from their true velocities, or `hazards:=oracle_static` for their current positions only.
+into the costmaps from their true velocities, or `hazards:=oracle_static` for their current positions only. With `hazards:=flow` the velocities come from the robot's own
+camera instead (RAFT flow, the robot's motion removed with depth and TF); the simulation then runs at a quarter of real
+time (`rtf:=0.25`, `--rtf 0.25` for `scripts/dev.sh`) so that the flow network keeps up.
 
 The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md); the
-steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 to 14).
+steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 to 15).
 
 Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is installed; see
 [docs/perception.md](docs/perception.md)):

@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'flow_node = rapid_nav_perception.flow_node:main',
+            'flow_tracker = rapid_nav_perception.flow_tracker:main',
         ],
     },
 )

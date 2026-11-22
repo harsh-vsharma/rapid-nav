@@ -84,6 +84,7 @@ class FlowNode(Node):
         self.received = 0
         self.dropped = 0
         self.no_depth = 0
+        self.no_prev_depth = 0
         self.depths = collections.deque(maxlen=DEPTH_HISTORY)
         self.processed = 0
         self.latencies = []
@@ -188,11 +189,17 @@ class FlowNode(Node):
 
     def process(self, pair, info):
         """Compute the flow of one pair and publish the FlowFrame (and the picture)."""
-        (prev_rgb_msg, _), (cur_rgb_msg, cur_stamp) = pair
+        (prev_rgb_msg, prev_stamp), (cur_rgb_msg, cur_stamp) = pair
         cur_depth_msg = self.nearest_depth(cur_stamp)
         if cur_depth_msg is None:
             with self.lock:
                 self.no_depth += 1
+            return
+        prev_depth_msg = self.nearest_depth(prev_stamp)
+        if prev_depth_msg is None or prev_depth_msg is cur_depth_msg:
+            # none near the previous frame, or the same depth image for both (a degenerate pair)
+            with self.lock:
+                self.no_prev_depth += 1
             return
         width, height = self.size
         camera_height, camera_width = int(info.height), int(info.width)
@@ -205,6 +212,8 @@ class FlowNode(Node):
 
         depth = image_to_array(cur_depth_msg)
         depth = resize_depth_nearest(depth, width, height).astype(np.float32)
+        prev_depth = resize_depth_nearest(
+            image_to_array(prev_depth_msg), width, height).astype(np.float32)
         fx, fy, cx, cy = scale_intrinsics(
             info.k[0], info.k[4], info.k[2], info.k[5],
             width / float(camera_width), height / float(camera_height))
@@ -228,6 +237,9 @@ class FlowNode(Node):
         message.flow = self.make_image(cur_rgb_msg.header, h, w, encoding, step, data)
         h, w, encoding, step, data = array_to_image_fields(depth, '32FC1')
         message.depth = self.make_image(cur_depth_msg.header, h, w, encoding, step, data)
+        h, w, encoding, step, data = array_to_image_fields(prev_depth, '32FC1')
+        message.previous_depth = self.make_image(
+            prev_depth_msg.header, h, w, encoding, step, data)
         message.camera_info = scaled
         message.backend = self.backend.name
         message.latency_ms = float(latency_ms)
@@ -268,11 +280,12 @@ class FlowNode(Node):
             latencies = list(self.latencies)
             self.latencies = []
             received, dropped, processed = self.received, self.dropped, self.processed
-            no_depth = self.no_depth
+            no_depth, no_prev_depth = self.no_depth, self.no_prev_depth
         median = float(np.median(latencies)) if latencies else float('nan')
         self.get_logger().info(
             'flow_node: received={} processed={} dropped_too_far={} no_depth={} '
-            'median_latency_ms={:.1f}'.format(received, processed, dropped, no_depth, median))
+            'median_latency_ms={:.1f} no_prev_depth={}'.format(
+                received, processed, dropped, no_depth, median, no_prev_depth))
 
     def stop(self):
         """Stop the worker thread and wait for it."""

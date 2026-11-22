@@ -4,7 +4,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -64,6 +65,13 @@ def generate_launch_description():
                         '(empty: none).',
         ),
         DeclareLaunchArgument(
+            'rtf',
+            default_value='1.0',
+            description='Target real-time factor of the simulation (1.0: the world as it is; '
+                        'below 1.0 it is set through the world service, so that slow '
+                        'perception is fresh in simulated time).',
+        ),
+        DeclareLaunchArgument(
             'hazards',
             default_value='off',
             description="Hazard layer in the costmaps: 'off', 'oracle' (true obstacle velocities) "
@@ -118,6 +126,18 @@ def launch_setup(context):
         ],
     )
     nodes = [gazebo]
+    rtf = float(LaunchConfiguration('rtf').perform(context))
+    if rtf <= 0.0:
+        raise RuntimeError('rtf must be positive, got {}'.format(rtf))
+    if rtf != 1.0:
+        # Wait for the world service of the running simulation, then set the target.
+        nodes.append(ExecuteProcess(
+            cmd=['bash', '-c',
+                 'for i in $(seq 1 90); do gz service -s /world/arena/set_physics '
+                 '--reqtype gz.msgs.Physics --reptype gz.msgs.Boolean --timeout 2000 '
+                 '--req "real_time_factor: {}" 2>/dev/null | grep -q true && exit 0; sleep 2; '
+                 'done; echo "rtf: set_physics did not answer" >&2; exit 1'.format(rtf)],
+            output='screen'))
     planning = LaunchConfiguration('planning').perform(context).strip().lower() == 'true'
     navigation = LaunchConfiguration('navigation').perform(context).strip().lower() == 'true'
     controller = LaunchConfiguration('controller').perform(context).strip().lower()
@@ -126,9 +146,10 @@ def launch_setup(context):
             'navigation:=true already starts the planning stack; do not pass planning:=true too'
         )
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
-    if hazards not in ('off', 'oracle', 'oracle_static'):
+    if hazards not in ('off', 'oracle', 'oracle_static', 'flow'):
         raise RuntimeError(
-            "hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(hazards)
+            "hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
+                hazards)
         )
     if controller not in CONTROLLERS:
         raise RuntimeError(
@@ -190,7 +211,8 @@ def launch_setup(context):
         ))
 
     perception = LaunchConfiguration('perception').perform(context).strip().lower() == 'true'
-    if perception:
+    flow_hazards = hazards == 'flow'
+    if perception or flow_hazards:
         perception_launch = os.path.join(
             get_package_share_directory('rapid_nav_perception'), 'launch', 'perception.launch.py')
         nodes.append(IncludeLaunchDescription(
@@ -198,7 +220,15 @@ def launch_setup(context):
             launch_arguments=[
                 ('backend', LaunchConfiguration('flow_backend').perform(context)),
                 ('device', LaunchConfiguration('flow_device').perform(context)),
-            ],
+            ] + ([('num_threads', '4'), ('publish_vis', 'false')] if flow_hazards else []),
+        ))
+    if flow_hazards:
+        nodes.append(Node(
+            package='rapid_nav_perception',
+            executable='flow_tracker',
+            name='flow_tracker',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         ))
 
     rviz_config = os.path.join(share, 'rviz', 'sim.rviz')
