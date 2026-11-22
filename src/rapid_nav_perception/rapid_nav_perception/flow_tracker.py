@@ -16,7 +16,7 @@ import numpy as np
 from rapid_nav_msgs.msg import FlowFrame, TrackedObstacle, TrackedObstacleArray
 from rapid_nav_perception.conversions import image_to_array
 from rapid_nav_perception.egomotion import (
-    block_texture, moving_mask, sample_points, texture_mask, world_velocities)
+    block_texture, depth_speed_floor, moving_mask, sample_points, texture_mask, world_velocities)
 from rapid_nav_perception.tracking import cluster, Tracker
 import rclpy
 from rclpy.duration import Duration
@@ -53,11 +53,11 @@ class FlowTracker(Node):
     """Turn FlowFrames into tracked obstacles in the map frame."""
 
     DEFAULTS = {
-        'stride': 4, 'depth_block': 4, 'min_depth': 0.3, 'max_depth': 6.0,
+        'stride': 4, 'depth_block': 4, 'min_depth': 0.3, 'max_depth': 4.0,
         'min_point_speed': 0.20, 'min_speed': 0.20, 'max_point_speed': 3.0, 'min_height': 0.05,
         'max_height': 2.0, 'cell': 0.10,
-        'min_samples': 6, 'gate': 0.6, 'alpha': 0.5, 'max_track_age': 1.0, 'confirm': 2,
-        'tf_timeout': 0.2, 'min_texture': 6.0,
+        'min_samples': 10, 'gate': 0.6, 'alpha': 0.5, 'max_track_age': 1.0, 'confirm': 2,
+        'tf_timeout': 0.2, 'min_texture': 6.0, 'gate_k': 2.0, 'flow_sigma_px': 0.5,
     }
 
     def __init__(self):
@@ -153,7 +153,10 @@ class FlowTracker(Node):
             clusters = []
         else:
             w1, w = world_velocities(x0, x1, pose0, pose1, dt)
-            mask = moving_mask(w1, w, p['min_point_speed'], p['max_point_speed'],
+            # Flow error fakes a larger speed the farther the point is: raise the floor with depth.
+            floor = np.maximum(p['min_point_speed'], depth_speed_floor(
+                x1[:, 2], k[0], dt, p['gate_k'], p['flow_sigma_px']))
+            mask = moving_mask(w1, w, floor, p['max_point_speed'],
                                p['min_height'], p['max_height'])
             self.moving_samples += int(mask.sum())
             clusters = cluster(w1[mask, :2], w[mask, :2], p['cell'], int(p['min_samples']))

@@ -148,8 +148,22 @@ def world_velocities(x0, x1, t0, t1, dt):
     return w1, (w1 - w0) / dt
 
 
+def depth_speed_floor(z, fx, dt, k=2.0, sigma_px=0.5):
+    """
+    Return the speed (m/s) that flow error alone can fake at depth z: k * z * sigma_px / (fx * dt).
+
+    A flow error of sigma_px pixels moves a point at depth z sideways by z * sigma_px / fx metres,
+    which over dt seconds looks like a speed; k is the number of sigmas that must be exceeded.
+    """
+    return k * np.asarray(z, dtype=np.float64) * sigma_px / (fx * dt)
+
+
 def moving_mask(w1, w, min_speed=0.20, max_speed=3.0, min_z=0.05, max_z=2.0):
-    """Return a mask of the samples that move on the floor plane (speed and height cuts)."""
+    """
+    Return a mask of the samples that move on the floor plane (speed and height cuts).
+
+    min_speed may be one number or one value per sample (see depth_speed_floor).
+    """
     speed = np.hypot(w[:, 0], w[:, 1])
     return ((speed >= min_speed) & (speed <= max_speed) & (w1[:, 2] >= min_z)
             & (w1[:, 2] <= max_z))

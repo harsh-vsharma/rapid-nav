@@ -3,9 +3,11 @@
 import math
 
 import numpy as np
+import pytest
 from rapid_nav_perception.egomotion import (
     block_median,
     block_texture,
+    depth_speed_floor,
     moving_mask,
     sample_points,
     texture_mask,
@@ -208,3 +210,15 @@ def test_texture_gate_drops_flat_and_straight_edges_and_keeps_a_checkerboard():
     kept = texture_mask(p, block_texture(checker, 4), 4, 1.0)
     # the checkerboard has a corner in every 4-pixel tile except along the image border
     assert kept.mean() > 0.95
+
+
+def test_depth_speed_floor_grows_with_depth_and_gates_far_points():
+    z = np.array([1.0, 2.0, 4.0])
+    floor = depth_speed_floor(z, FX, 0.045, k=2.0, sigma_px=0.5)
+    assert floor == pytest.approx(2.0 * z * 0.5 / (FX * 0.045))
+    assert floor[2] == pytest.approx(4.0 * floor[0])
+    # the same 0.3 m/s sideways motion passes at 1 m and is rejected at 4 m
+    w1 = np.array([[0.0, 0.0, 0.5]] * 3)
+    w = np.array([[0.3, 0.0, 0.0]] * 3)
+    assert list(moving_mask(w1, w, np.maximum(0.2, floor))) == [True, True, False]
+    assert depth_speed_floor(z, FX, 0.045, k=0.0)[2] == 0.0
