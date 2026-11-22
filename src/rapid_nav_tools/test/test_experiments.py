@@ -86,6 +86,18 @@ def test_a_good_row_whose_bundle_is_gone_is_pending(tmp_path):
     assert len(todo) == 4
 
 
+def test_command_line_append_and_pending(tmp_path, capsys):
+    path = os.path.join(CONFIG, 'pilot.yaml')
+    index = str(tmp_path / 'index.csv')
+    assert ex.main(['append', index, 'crossing', 'dwb', 'off', '1', 'b1', '0', '115', '1']) == 0
+    (tmp_path / 'b1').mkdir()
+    assert ex.read_index(index)[0]['wall_s'] == '115'
+    assert ex.main(['pending', path, str(tmp_path)]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 3 and not any(
+        line.startswith('crossing\tdwb\toff\t1\t') for line in lines)
+
+
 # --- statistics -------------------------------------------------------------------------------
 
 def test_wilson_known_values():

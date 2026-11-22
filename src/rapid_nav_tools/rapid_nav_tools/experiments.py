@@ -433,7 +433,8 @@ def cell_table_rows(cells):
 def pair_table_rows(pairs):
     """Return (header, rows) of a paired table (per scenario or pooled)."""
     header = ['scenario', 'controller', 'A against B', 'pairs', 'min clearance A-B m (95 % CI)',
-              'reading', 'collisions A-B (95 % CI)', 'reading ']
+              'reading (clearance)', 'collisions A-B (95 % CI)',
+              'reading (collisions)']
     rows = []
     for p in pairs:
         rows.append([p['scenario'], p['controller'], '{} vs {}'.format(p['a'], p['b']),
@@ -488,7 +489,7 @@ def main(argv=None):
         _runs_to_tsv(pending(matrix, read_index(os.path.join(rest[1], 'index.csv')), rest[1]))
     elif command == 'valid' and len(rest) == 1:
         print('1' if parse_bundle(rest[0])['valid'] else '0')
-    elif command == 'append' and len(rest) == 10:
+    elif command == 'append' and len(rest) == 9:
         append_index(rest[0], dict(zip(INDEX_FIELDS, rest[1:])))
     else:
         print(usage, file=sys.stderr)
