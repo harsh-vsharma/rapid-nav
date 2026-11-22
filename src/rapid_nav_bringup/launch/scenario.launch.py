@@ -23,7 +23,7 @@ def generate_launch_description():
             'hazards',
             default_value='off',
             description="'oracle' or 'oracle_static' also starts oracle_obstacles for the "
-                        "scenario (true or zero velocities); 'off' starts nothing.",
+                        "scenario (true or zero velocities); 'off' and 'flow' start nothing.",
         ),
         OpaqueFunction(function=launch_setup),
     ])
@@ -51,11 +51,11 @@ def launch_setup(context):
         topics.append('/model/{}/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry'.format(
             obstacle['name']))
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
-    if hazards not in ('off', 'oracle', 'oracle_static'):
-        raise RuntimeError("hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(
-            hazards))
+    if hazards not in ('off', 'oracle', 'oracle_static', 'flow'):
+        raise RuntimeError(
+            "hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(hazards))
     oracle = []
-    if hazards != 'off':
+    if hazards in ('oracle', 'oracle_static'):
         oracle = [Node(
             package='rapid_nav_tools',
             executable='oracle_obstacles',

@@ -31,14 +31,18 @@ usage: scripts/dev.sh <command>
                   planning stack + planner_check; offline (static localisation) on the map, or with
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
-  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static] [--rtf <x>]
+  nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static|flow] [--rtf <x>]
                   navigation stack in the simulation + nav_run (goal runs scored on ground truth,
                   against the moving obstacles of the crossing, head_on and crowd scenarios);
                   the optional third word starts the hazard layer with the true obstacle velocities
-                  (oracle) or positions only (oracle_static); default off; the bundle goes to
+                  (oracle), positions only (oracle_static) or the camera's RAFT flow (flow); default off; the bundle goes to
                   nav_run_<scenario>_<controller>[_<hazards>]_<time>/
                   (--rtf <x>, or the RTF environment variable, sets the simulation's target real-time
                   factor; default 1.0, nothing changed)
+  track-smoke <crossing|head_on|crowd> [--rtf <x>]
+                  the camera-based hazards (RAFT flow + flow_tracker) in the simulation with the dwb
+                  controller; track_check scores the flow tracks against the obstacles' true poses;
+                  the bundle goes to track_check_<scenario>_<time>/ (the goal run's own bundle in it)
   shell           open an interactive bash with the same mounts
   clean           delete the volume $VOLUME
 EOF
@@ -168,14 +172,14 @@ case "${1:-}" in
         extract_rtf ${1+"$@"}
         set -- ${REST[@]+"${REST[@]}"}
         if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static]" >&2
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static|flow]" >&2
             exit 2
         fi
         scenario="$1"
         controller="$2"
         hazards="${3:-off}"
         case "$hazards" in
-            off|oracle|oracle_static) ;;
+            off|oracle|oracle_static|flow) ;;
             *) echo "nav-smoke: unknown hazards $hazards" >&2; exit 2 ;;
         esac
         case "$scenario" in
@@ -196,6 +200,26 @@ case "${1:-}" in
         # navigation action server), copy the launch log into the bundle, stop the stack and exit
         # with nav_run's code.
         smoke_cmd="mkdir -p $bundle; $launch_cmd > /ws/nav_launch.log 2>&1 & launch_pid=\$!; $check_cmd; rc=\$?; kill -INT \$launch_pid 2>/dev/null; sleep 10; cp /ws/nav_launch.log $bundle/; exit \$rc"
+        in_container "$smoke_cmd"
+        ;;
+    track-smoke)
+        shift
+        extract_rtf ${1+"$@"}
+        set -- ${REST[@]+"${REST[@]}"}
+        if [ "$#" -ne 1 ]; then
+            echo "usage: scripts/dev.sh track-smoke <crossing|head_on|crowd> [--rtf <x>]" >&2
+            exit 2
+        fi
+        scenario="$1"
+        case "$scenario" in
+            crossing|head_on|crowd) ;;
+            *) echo "track-smoke: unknown scenario $scenario" >&2; exit 2 ;;
+        esac
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        bundle="/repo/track_check_${scenario}_$stamp"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=dwb scenario:=$scenario hazards:=flow rtf:=$RTF"
+        # The recorder listens while nav_run drives the goals; the stop file ends the recording.
+        smoke_cmd="mkdir -p $bundle; rm -f /ws/track_stop; $launch_cmd > /ws/track_launch.log 2>&1 & launch_pid=\$!; ros2 run rapid_nav_tools track_check --scenario $scenario --out $bundle --stop-file /ws/track_stop > $bundle/track_check.log 2>&1 & check_pid=\$!; ros2 run rapid_nav_tools nav_run --scenario $scenario --controller dwb --hazards flow --profile docker --out $bundle/nav_run > $bundle/nav_run.log 2>&1; rc=\$?; sleep 5; touch /ws/track_stop; wait \$check_pid; cp /ws/track_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$smoke_cmd"
         ;;
     shell)

@@ -146,9 +146,10 @@ def launch_setup(context):
             'navigation:=true already starts the planning stack; do not pass planning:=true too'
         )
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
-    if hazards not in ('off', 'oracle', 'oracle_static'):
+    if hazards not in ('off', 'oracle', 'oracle_static', 'flow'):
         raise RuntimeError(
-            "hazards must be 'off', 'oracle' or 'oracle_static', got '{}'".format(hazards)
+            "hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
+                hazards)
         )
     if controller not in CONTROLLERS:
         raise RuntimeError(
@@ -210,7 +211,8 @@ def launch_setup(context):
         ))
 
     perception = LaunchConfiguration('perception').perform(context).strip().lower() == 'true'
-    if perception:
+    flow_hazards = hazards == 'flow'
+    if perception or flow_hazards:
         perception_launch = os.path.join(
             get_package_share_directory('rapid_nav_perception'), 'launch', 'perception.launch.py')
         nodes.append(IncludeLaunchDescription(
@@ -218,7 +220,15 @@ def launch_setup(context):
             launch_arguments=[
                 ('backend', LaunchConfiguration('flow_backend').perform(context)),
                 ('device', LaunchConfiguration('flow_device').perform(context)),
-            ],
+            ] + ([('num_threads', '4'), ('publish_vis', 'false')] if flow_hazards else []),
+        ))
+    if flow_hazards:
+        nodes.append(Node(
+            package='rapid_nav_perception',
+            executable='flow_tracker',
+            name='flow_tracker',
+            output='screen',
+            parameters=[{'use_sim_time': True}],
         ))
 
     rviz_config = os.path.join(share, 'rviz', 'sim.rviz')
