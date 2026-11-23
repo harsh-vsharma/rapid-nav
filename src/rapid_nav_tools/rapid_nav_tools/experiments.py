@@ -386,7 +386,8 @@ def pair_stats(records, comparisons=None, seed=7):
 
 
 def interval_words(interval, n_pairs=None):
-    """Read a (mean, low, high) interval in words: excludes or includes zero, or too few pairs.
+    """
+    Read a (mean, low, high) interval in words: excludes or includes zero, or too few pairs.
 
     With n_pairs below FEW_PAIRS the reading carries the note "(few pairs)".
     """
