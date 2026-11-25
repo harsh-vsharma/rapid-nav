@@ -341,7 +341,8 @@ velocity source publishes the same message.
 
 **The message.** `rapid_nav_msgs/TrackedObstacleArray` on `/obstacles/tracked`: a header (stamp when the positions are
 valid, frame `map`), a `source` string and a list of `TrackedObstacle` (`id`, `position`, `velocity` in the header frame,
-`radius` of a circle that covers the outline, `confidence`).
+`radius` of a circle that covers the outline, `confidence`, and `position_sigma`, `velocity_sigma`: 1-sigma per axis, 0
+when unknown).
 
 **The oracle and its ablation.** `oracle_obstacles` reads the true pose and velocity of every obstacle of the scenario from
 Gazebo's odometry and publishes them at 10 Hz (sim time); it is the only node of the stack that reads
@@ -356,6 +357,11 @@ parameters.
 does not run. The simulation runs at a quarter of real time (`rtf:=0.25`) because the flow network needs about 0.6 s per
 frame pair on the development machine; every time in a result is in simulated seconds, and `nav_run` records the measured
 real-time factor in `environment.txt`, `results.json` and `summary.md`.
+
+**The fused source.** With `hazards:=fused` the lidar and the camera tracks are fused per obstacle (`fusion_node`,
+`source: fused`), each track carries a position and a velocity sigma, and the layer paints an occupancy probability
+instead of the fixed band for such tracks; a time-to-collision governor also limits the speed (`governor:=false`
+turns it off). Tracks without sigmas get exactly the S7 band below. See [hybrid.md](hybrid.md).
 
 **Prediction and cost.** For each obstacle the layer paints disks at its predicted centres `p + v (age + t)` for
 `t = 0, 0.25, ... 2.0 s` (`horizon_s`, `time_step_s`), where `age` is the age of the message. The radius is the

@@ -91,6 +91,10 @@ flow and the saturation is its size; zero flow is white.
 | `gate_k`, `flow_sigma_px` | `0.0`, `0.5` | raises the speed floor with depth to `gate_k * z * sigma / (fx * dt)`; off by default |
 | `cell`, `min_samples`, `min_speed` | `0.10`, `10`, `0.20` | cluster grid (m), points per cluster, mean speed per cluster (m/s) |
 | `gate`, `alpha`, `max_track_age`, `confirm` | `0.6`, `0.5`, `1.0`, `2` | matching distance (m), velocity smoothing, track lifetime (s), matches to confirm |
+| `uncertainty` | `false` | also publish the frame's reliability as `confidence` and per-track `position_sigma`, `velocity_sigma` (set by `hazards:=fused`) |
+
+With `hazards:=fused` the camera tracks go to `/obstacles/flow` with their uncertainty, and `fusion_node` fuses them with
+lidar clusters in one Kalman filter per obstacle: see [hybrid.md](hybrid.md).
 
 **Why a slower simulation.** RAFT-Small on this CPU needs about 0.6 s for a pair, so at real time it gets two pairs per
 simulated second, too few to follow a walker. `rtf:=0.25` (the `rtf` argument of `sim.launch.py`, also `--rtf` of
