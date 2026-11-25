@@ -1,6 +1,6 @@
 # Report: the `frame_route` flow backend
 
-Branch: `feature/frame-routing-flow`, based on `main` at `cae9b48`. Nineteen files changed, 1021 lines added and 15
+Branch: `feature/frame-route-backend`, based on `main` at `cae9b48`. Nineteen files changed, 1021 lines added and 15
 removed. No existing default was changed.
 
 ## Summary
@@ -125,7 +125,7 @@ The vendored modules keep their **layer names unchanged**, so the released check
 | Package tests, Python with PyTorch and both checkpoints | 49 passed, including the end-to-end test: a (+3, −2) px shift recovered within 0.5 px by SEA-RAFT (first pair) and by FlowNetS (second pair) |
 | Equivalence with the source project | Same frames (alley_2 and ambush_2, 4 pairs each, 320x240) through the original router and this port: identical flow (max difference 0.0) and the same route on every pair |
 | `colcon build --packages-select rapid_nav_perception` | builds; `nets/` and `nets/searaft/` are installed |
-| GitHub Actions CI on this branch (full workspace `colcon build` and `colcon test`, rosdep-installed dependencies) | passed (run 45535454222) |
+| GitHub Actions CI (full workspace `colcon build` and `colcon test`, rosdep-installed dependencies) | passed on the same code (run 45535454222, from the earlier branch `feature/frame-routing-flow`) |
 
 Tests added in `test/test_frame_route.py`:
 
