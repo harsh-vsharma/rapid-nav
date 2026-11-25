@@ -36,10 +36,25 @@ add_library(rapid_nav_planner SHARED src/grid_planner.cpp)
 target_include_directories(rapid_nav_planner PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_link_libraries(rapid_nav_planner rapid_nav_grid_search)
-ament_target_dependencies(rapid_nav_planner
-  rclcpp rclcpp_lifecycle nav2_core nav2_costmap_2d nav2_util pluginlib nav_msgs
-  geometry_msgs std_msgs tf2 tf2_ros)
+target_link_libraries(rapid_nav_planner PUBLIC
+  rapid_nav_grid_search
+  rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
+  nav2_costmap_2d::nav2_costmap_2d_core
+  nav2_util::nav2_util_core
+  pluginlib::pluginlib
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${std_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros)
+# Nav2's exported target for nav2_core; Jazzy's nav2_core is header-only and exports only its include
+# directories.
+if(TARGET nav2_core::nav2_core)
+  target_link_libraries(rapid_nav_planner PUBLIC nav2_core::nav2_core)
+else()
+  target_include_directories(rapid_nav_planner PUBLIC ${nav2_core_INCLUDE_DIRS})
+endif()
 
 # The benchmark (no ROS): the map loader, the cost grid, the random queries and the timing.
 add_library(rapid_nav_bench SHARED src/bench.cpp)
