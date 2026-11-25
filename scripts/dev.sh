@@ -4,8 +4,14 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE=rapid-nav-dev:jazzy
-VOLUME=rapid-nav-ws
+# ROS_DISTRO=lyrical selects the Lyrical image and its own workspace volume; jazzy is the default.
+ROS_DISTRO="${ROS_DISTRO:-jazzy}"
+IMAGE=rapid-nav-dev:$ROS_DISTRO
+if [ "$ROS_DISTRO" = jazzy ]; then
+    VOLUME=rapid-nav-ws
+else
+    VOLUME=rapid-nav-ws-$ROS_DISTRO
+fi
 
 # -t only when stdout is a terminal
 TTY=""
@@ -15,7 +21,7 @@ fi
 
 usage() {
     cat <<EOF
-usage: scripts/dev.sh <command>
+usage: [ROS_DISTRO=jazzy|lyrical] scripts/dev.sh <command>
 
   image           build the image $IMAGE from docker/Dockerfile
   build [args]    colcon build of src/ (inside the image, into the volume $VOLUME)
@@ -59,7 +65,7 @@ EOF
 in_container() {
     local cmd="$1"
     docker run --rm $TTY ${CONTAINER_NAME:+--name "$CONTAINER_NAME"} -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \
-        bash -c "source /opt/ros/jazzy/setup.bash && { [ ! -f /ws/install/setup.bash ] || source /ws/install/setup.bash; } && $cmd"
+        bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && { [ ! -f /ws/install/setup.bash ] || source /ws/install/setup.bash; } && $cmd"
 }
 
 # Quote arguments so that they survive the trip through bash -c (prints a leading space per argument).
@@ -91,7 +97,7 @@ extract_rtf() {
 
 case "${1:-}" in
     image)
-        docker build -t "$IMAGE" -f "$REPO/docker/Dockerfile" "$REPO/docker"
+        docker build --build-arg ROS_DISTRO="$ROS_DISTRO" -t "$IMAGE" -f "$REPO/docker/Dockerfile" "$REPO/docker"
         ;;
     build)
         shift
@@ -105,7 +111,7 @@ case "${1:-}" in
         in_container "colcon test --base-paths /repo/src --build-base /ws/build --install-base /ws/install --test-result-base /ws/test_results --return-code-on-test-failure --event-handlers console_cohesion+; rc=\$?; if [ -d /ws/test_results ]; then colcon test-result --test-result-base /ws/test_results --verbose; fi; exit \$rc"
         ;;
     deps)
-        in_container "rosdep check --from-paths /repo/src --ignore-src --rosdistro jazzy"
+        in_container "rosdep check --from-paths /repo/src --ignore-src --rosdistro $ROS_DISTRO"
         ;;
     run)
         shift
@@ -244,7 +250,7 @@ case "${1:-}" in
         ;;
     shell)
         docker run --rm -it -v "$REPO":/repo -v "$VOLUME":/ws -w /ws "$IMAGE" \
-            bash -c "source /opt/ros/jazzy/setup.bash && { [ ! -f /ws/install/setup.bash ] || source /ws/install/setup.bash; }; exec bash -i"
+            bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && { [ ! -f /ws/install/setup.bash ] || source /ws/install/setup.bash; }; exec bash -i"
         ;;
     clean)
         docker volume rm "$VOLUME"
