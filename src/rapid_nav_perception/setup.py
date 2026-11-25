@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'flow_node = rapid_nav_perception.flow_node:main',
             'flow_tracker = rapid_nav_perception.flow_tracker:main',
+            'fusion_node = rapid_nav_perception.fusion_node:main',
         ],
     },
 )
