@@ -11,3 +11,13 @@ flow_node:
     raft_iterations: 12
     num_threads: 0
     publish_vis: true
+    # backend: frame_route only. FlowNetS checkpoint ('' = $RAPID_NAV_WEIGHTS, default
+    # ~/.cache/rapid_nav, /flownets/flownets_EPE1.951.pth.tar), SEA-RAFT checkpoint (a file or a name, downloaded once),
+    # a frame is fast when more than route_frac of its pixels move over route_disp_px
+    # (10 px at 640 wide in the benchmark, 5 px at the 320 px processing width)
+    flownet_weights: ''
+    searaft_weights: Tartan-C-T-TSKH432x960-S
+    route_disp_px: 5.0
+    route_frac: 0.3
+    stream_iters: 2
+    key_iters: 4

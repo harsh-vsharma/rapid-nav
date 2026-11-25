@@ -85,7 +85,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'flow_backend',
             default_value='raft_small',
-            description='Flow backend: farneback, raft_small or raft_large.',
+            description='Flow backend: farneback, raft_small, raft_large or frame_route.',
         ),
         DeclareLaunchArgument(
             'flow_device',

@@ -52,6 +52,13 @@ class FlowNode(Node):
         self.declare_parameter('raft_iterations', 12)
         self.declare_parameter('num_threads', 0)
         self.declare_parameter('publish_vis', True)
+        # frame_route backend only (FlowNetS on calm frames, streaming SEA-RAFT-S on fast ones)
+        self.declare_parameter('flownet_weights', '')
+        self.declare_parameter('searaft_weights', 'Tartan-C-T-TSKH432x960-S')
+        self.declare_parameter('route_disp_px', 5.0)
+        self.declare_parameter('route_frac', 0.3)
+        self.declare_parameter('stream_iters', 2)
+        self.declare_parameter('key_iters', 4)
         self.target_width = int(self.get_parameter('width').value)
         self.max_rate = float(self.get_parameter('max_rate').value)
         self.max_pair_gap = float(self.get_parameter('max_pair_gap').value)
@@ -66,6 +73,14 @@ class FlowNode(Node):
             iterations=int(self.get_parameter('raft_iterations').value),
             num_threads=int(self.get_parameter('num_threads').value),
             logger=self.get_logger(),
+            frame_route={
+                'flownet_weights': str(self.get_parameter('flownet_weights').value),
+                'searaft_weights': str(self.get_parameter('searaft_weights').value),
+                'disp_px': float(self.get_parameter('route_disp_px').value),
+                'frac': float(self.get_parameter('route_frac').value),
+                'stream_iters': int(self.get_parameter('stream_iters').value),
+                'key_iters': int(self.get_parameter('key_iters').value),
+            },
         )
         self.device = getattr(self.backend, 'device', 'cpu')
         self.torch_version = None
@@ -241,7 +256,8 @@ class FlowNode(Node):
         message.previous_depth = self.make_image(
             prev_depth_msg.header, h, w, encoding, step, data)
         message.camera_info = scaled
-        message.backend = self.backend.name
+        # frame_route says which network ran on this pair, e.g. frame_route:searaft
+        message.backend = getattr(self.backend, 'last_ran', self.backend.name)
         message.latency_ms = float(latency_ms)
         self.flow_pub.publish(message)
 

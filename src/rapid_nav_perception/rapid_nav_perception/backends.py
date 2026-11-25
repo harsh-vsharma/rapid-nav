@@ -3,14 +3,17 @@ Optical flow backends behind one interface.
 
 FarnebackFlow is OpenCV's dense flow and always available. RaftFlow is torchvision's RAFT and needs
 PyTorch; PyTorch is imported only when a RAFT backend is built, so the module imports without it.
+frame_route (frame_route.py) routes whole frames between FlowNetS and streaming SEA-RAFT-S and
+also needs PyTorch.
 """
 
 import numpy as np
 
 RAFT_VARIANTS = ('raft_small', 'raft_large')
+TORCH_BACKENDS = RAFT_VARIANTS + ('frame_route',)
 NO_TORCH_WARNING = (
     'PyTorch not found: using farneback. '
-    'Install it as in docs/perception.md to use raft_small or raft_large.'
+    'Install it as in docs/perception.md to use raft_small, raft_large or frame_route.'
 )
 
 
@@ -113,21 +116,29 @@ class RaftFlow(FlowBackend):
 
 
 def make_backend(name, device='auto', weights_path=None, iterations=12, num_threads=0,
-                 logger=None):
+                 logger=None, frame_route=None):
     """
     Return (backend, warning) for a backend name.
 
-    A RAFT name without PyTorch gives FarnebackFlow and the warning text; the warning is also
-    logged when a logger is given. Unknown names raise ValueError.
+    A PyTorch backend (RAFT or frame_route) without PyTorch gives FarnebackFlow and the warning
+    text; the warning is also logged when a logger is given. frame_route takes its settings
+    from the frame_route dict (the keyword arguments of FrameRouteFlow). Unknown names raise
+    ValueError.
     """
     if name == 'farneback':
         return FarnebackFlow(), None
-    if name in RAFT_VARIANTS:
+    if name in TORCH_BACKENDS:
         if not torch_available():
             if logger is not None:
                 logger.warning(NO_TORCH_WARNING)
             return FarnebackFlow(), NO_TORCH_WARNING
+        if name == 'frame_route':
+            from rapid_nav_perception.frame_route import FrameRouteFlow
+
+            return FrameRouteFlow(device, num_threads=num_threads,
+                                  **(frame_route or {})), None
         return RaftFlow(name, device, weights_path=weights_path, iterations=iterations,
                         num_threads=num_threads), None
-    raise ValueError('unknown flow backend {!r}; use farneback, raft_small or raft_large'.format(
-        name))
+    raise ValueError(
+        'unknown flow backend {!r}; use farneback, raft_small, raft_large or frame_route'.format(
+            name))
