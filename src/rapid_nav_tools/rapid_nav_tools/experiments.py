@@ -33,6 +33,8 @@ DEFAULT_COMPARISONS = (
     ('oracle', 'oracle_static'),
     ('flow', 'off'),
     ('flow', 'oracle'),
+    ('fused', 'flow'),
+    ('fused', 'off'),
 )
 
 

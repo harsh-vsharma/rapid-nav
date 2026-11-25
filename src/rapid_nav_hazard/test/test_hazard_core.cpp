@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include "rapid_nav_hazard/hazard_core.hpp"
@@ -12,6 +14,8 @@ using rapid_nav_hazard::bounding_box;
 using rapid_nav_hazard::Disk;
 using rapid_nav_hazard::GridSpec;
 using rapid_nav_hazard::HazardParams;
+using rapid_nav_hazard::kMaxHazardCost;
+using rapid_nav_hazard::normal_cdf;
 using rapid_nav_hazard::Obstacle;
 using rapid_nav_hazard::predict_disks;
 using rapid_nav_hazard::rasterise;
@@ -27,6 +31,23 @@ Obstacle make(double x, double y, double vx, double vy, double r)
   o.vy = vy;
   o.radius = r;
   return o;
+}
+
+Obstacle uncertain(double x, double y, double vx, double vy, double r, double sp, double sv)
+{
+  Obstacle o = make(x, y, vx, vy, r);
+  o.position_sigma = sp;
+  o.velocity_sigma = sv;
+  return o;
+}
+
+uint8_t peak_of(const std::vector<rapid_nav_hazard::PaintedCell> & cells)
+{
+  uint8_t best = 0;
+  for (const auto & c : cells) {
+    best = std::max(best, c.cost);
+  }
+  return best;
 }
 
 GridSpec grid()
@@ -160,4 +181,98 @@ TEST(HazardCore, NoObstaclesNoBox)
   const auto disks = predict_disks({}, 0.0, p);
   EXPECT_TRUE(disks.empty());
   EXPECT_TRUE(bounding_box(disks).empty);
+}
+
+// The S7 rasterisation, written out independently: hard disks, maximum cost per cell centre.
+TEST(HazardCore, ZeroSigmaIsTheS7OutputBitForBit)
+{
+  const HazardParams p;
+  const std::vector<Obstacle> obstacles = {
+    make(0.0, 0.0, 0.5, 0.0, 0.2), make(1.0, 0.3, 0.0, 0.0, 0.3), make(-1.2, 0.8, -0.2, 0.6, 0.25),
+    uncertain(2.0, -1.0, 0.4, 0.4, 0.2, 0.0, 0.0)};
+  const auto disks = predict_disks(obstacles, 0.2, p);
+  for (const auto & d : disks) {
+    EXPECT_EQ(d.sigma, 0.0);
+  }
+  const GridSpec g = grid();
+  std::map<std::pair<int, int>, int> expected;
+  for (const auto & d : disks) {
+    for (int j = 0; j < g.size_y; ++j) {
+      for (int i = 0; i < g.size_x; ++i) {
+        const double cx = g.origin_x + (i + 0.5) * g.resolution;
+        const double cy = g.origin_y + (j + 0.5) * g.resolution;
+        if (std::hypot(cx - d.x, cy - d.y) <= d.radius) {
+          auto & slot = expected[{i, j}];
+          slot = std::max(slot, d.cost);
+        }
+      }
+    }
+  }
+  const auto cells = rasterise(disks, g);
+  ASSERT_EQ(cells.size(), expected.size());
+  for (const auto & c : cells) {
+    EXPECT_EQ(static_cast<int>(c.cost), expected.at({c.i, c.j}));
+  }
+}
+
+TEST(HazardCore, UncertainDisksCarrySigmaAndPeak)
+{
+  const HazardParams p;
+  const auto disks = predict_disks({uncertain(0.0, 0.0, 0.5, 0.0, 0.2, 0.1, 0.2)}, 0.0, p);
+  ASSERT_EQ(disks.size(), 9u);
+  for (size_t k = 0; k < disks.size(); ++k) {
+    const double t = 0.25 * k;
+    EXPECT_NEAR(disks[k].sigma, std::sqrt(0.01 + 0.04 * t * t), 1e-12);
+    EXPECT_NEAR(disks[k].peak, 252.0 - (252.0 - 60.0) * t / 2.0, 1e-9);
+  }
+  EXPECT_NEAR(normal_cdf(0.0), 0.5, 1e-12);
+  EXPECT_NEAR(normal_cdf(1.0), 0.841345, 1e-6);
+}
+
+TEST(HazardCore, LargerSigmaGivesALowerPeakAndAWiderFootprint)
+{
+  const HazardParams p;
+  size_t last_size = 0;
+  int last_peak = 253;
+  for (double sigma : {0.2, 0.3, 0.5, 0.8}) {
+    const auto disks = predict_disks({uncertain(0.0, 0.0, 0.0, 0.0, 0.2, sigma, 0.0)}, 0.0, p);
+    const auto cells = rasterise(disks, grid());
+    const int peak = peak_of(cells);
+    EXPECT_LT(peak, last_peak) << "sigma " << sigma;
+    EXPECT_GT(cells.size(), last_size) << "sigma " << sigma;
+    // Centre cell: P = Phi(R / sigma).
+    EXPECT_NEAR(peak, 252.0 * normal_cdf(0.5 / sigma), 1.0 + 252.0 * 0.03 / sigma);
+    last_peak = peak;
+    last_size = cells.size();
+  }
+  // A small sigma is close to the hard disk: almost 252 at the centre, 126 at the edge.
+  const auto sharp = rasterise(
+    predict_disks({uncertain(0.0, 0.0, 0.0, 0.0, 0.2, 0.01, 0.0)}, 0.0, p), grid());
+  EXPECT_EQ(peak_of(sharp), 252);
+  // The velocity sigma widens the far disks only: k = 0 has sigma = position_sigma.
+  const auto band = predict_disks({uncertain(0.0, 0.0, 0.5, 0.0, 0.2, 0.05, 0.4)}, 0.0, p);
+  EXPECT_NEAR(band.front().sigma, 0.05, 1e-12);
+  EXPECT_NEAR(band.back().sigma, std::sqrt(0.05 * 0.05 + 0.16 * 4.0), 1e-12);
+  // The box reaches 3 sigma beyond the radius.
+  const auto box = bounding_box(band);
+  EXPECT_NEAR(box.max_x, 1.0 + 0.5 + 3.0 * band.back().sigma, 1e-9);
+}
+
+TEST(HazardCore, UncertainCostNeverReachesTheInscribedValue)
+{
+  HazardParams p;
+  for (int max_cost : {252, 300}) {
+    p.max_cost = max_cost;
+    for (double sp : {0.0, 0.001, 0.05, 0.5}) {
+      for (double sv : {0.001, 0.1, 1.0}) {
+        const auto cells = rasterise(
+          predict_disks({uncertain(0.0, 0.0, 0.5, 0.2, 0.3, sp, sv)}, 0.1, p), grid());
+        ASSERT_FALSE(cells.empty());
+        for (const auto & c : cells) {
+          EXPECT_LE(static_cast<int>(c.cost), kMaxHazardCost);
+          EXPECT_GE(static_cast<int>(c.cost), 1);
+        }
+      }
+    }
+  }
 }

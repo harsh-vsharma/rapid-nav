@@ -13,7 +13,7 @@ import yaml
 
 BUILT_IN_MAPS = ('arena', 'maze')
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
-HAZARDS = ('off', 'oracle', 'oracle_static', 'flow')
+HAZARDS = ('off', 'oracle', 'oracle_static', 'flow', 'fused')
 
 
 def generate_launch_description():
@@ -25,9 +25,14 @@ def generate_launch_description():
                               description="'dwa' (ours), 'dwb' (Nav2's DWB) or 'rpp' "
                                           "(Regulated Pure Pursuit)."),
         DeclareLaunchArgument('hazards', default_value='off',
-                              description="'off', 'oracle', 'oracle_static' or 'flow': the hazard layer "
-                                          'in both costmaps (the source is started by the '
-                                          'scenario launch).'),
+                              description="'off', 'oracle', 'oracle_static', 'flow' or "
+                                          "'fused': the hazard layer in both costmaps (the "
+                                          'source is started by the simulation launch); '
+                                          "'fused' also starts the speed governor."),
+        DeclareLaunchArgument('governor', default_value='true',
+                              description="With hazards 'fused': start the time-to-collision "
+                                          "speed governor ('true') or not ('false', the "
+                                          'ablation).'),
         DeclareLaunchArgument('use_sim_time', default_value='true',
                               description='Use the simulated clock.'),
         DeclareLaunchArgument('x', default_value='0.0', description='Initial pose x (m).'),
@@ -63,13 +68,14 @@ def navigation_config(config_path, controller, use_sim_time, bt_xml, hazards='of
     The controller server runs one controller, named FollowPath, so the chosen controller's block
     is copied there. The clock is set on every node, because the costmaps run in nodes of their own
     that the launch's use_sim_time does not reach. The BT navigator gets the installed tree.
-    With hazards 'oracle', 'oracle_static' or 'flow' the hazard layer joins both costmaps after the
-    inflation layer; with 'off' its parameter blocks are removed, so the parameters are exactly
-    those of a stack without the layer.
+    With hazards 'oracle', 'oracle_static', 'flow' or 'fused' the hazard layer joins both costmaps
+    after the inflation layer; with 'off' its parameter blocks are removed, so the parameters are
+    exactly those of a stack without the layer.
     """
     if hazards not in HAZARDS:
-        raise RuntimeError("hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
-            hazards))
+        raise RuntimeError(
+            "hazards must be 'off', 'oracle', 'oracle_static', 'flow' or 'fused', got '{}'".format(
+                hazards))
     with open(config_path, encoding='utf-8') as handle:
         data = yaml.safe_load(handle)
     controller_params = data['controller_server']['ros__parameters']
@@ -98,8 +104,12 @@ def launch_setup(context):
         raise RuntimeError("controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller))
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
     if hazards not in HAZARDS:
-        raise RuntimeError("hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
-            hazards))
+        raise RuntimeError(
+            "hazards must be 'off', 'oracle', 'oracle_static', 'flow' or 'fused', got '{}'".format(
+                hazards))
+    governor = LaunchConfiguration('governor').perform(context).strip().lower()
+    if governor not in ('true', 'false'):
+        raise RuntimeError("governor must be 'true' or 'false', got '{}'".format(governor))
     use_sim_time = LaunchConfiguration('use_sim_time').perform(context).strip().lower() == 'true'
     config = navigation_config(
         os.path.join(share, 'config', 'navigation.yaml'), controller, use_sim_time,
@@ -111,7 +121,17 @@ def launch_setup(context):
 
     managed = ['map_server', 'amcl', 'planner_server', 'controller_server', 'behavior_server',
                'bt_navigator']
-    return [
+    extra = []
+    if hazards == 'fused' and governor == 'true':
+        # Reactive layer on top of the plan: a speed limit from the time to collision.
+        extra.append(Node(
+            package='rapid_nav_navigation',
+            executable='ttc_governor',
+            name='ttc_governor',
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        ))
+    return extra + [
         Node(
             package='nav2_map_server',
             executable='map_server',

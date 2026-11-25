@@ -22,6 +22,7 @@ std::vector<Disk> predict_disks(
     const bool moving = speed >= params.min_speed;
     const int last = moving ? steps : 0;
     const double disk_radius = o.radius + params.robot_radius + params.margin;
+    const bool uncertain = o.position_sigma > 0.0 || o.velocity_sigma > 0.0;
     for (int k = 0; k <= last; ++k) {
       const double t = k * step;
       double cost = params.max_cost;
@@ -33,27 +34,49 @@ std::vector<Disk> predict_disks(
       d.y = o.y + (moving ? o.vy * (age + t) : 0.0);
       d.radius = disk_radius;
       d.cost = std::min(params.max_cost, static_cast<int>(std::lround(cost)));
+      if (uncertain) {
+        d.sigma = std::sqrt(
+          o.position_sigma * o.position_sigma + o.velocity_sigma * o.velocity_sigma * t * t);
+        d.peak = std::min(cost, static_cast<double>(params.max_cost));
+      }
       disks.push_back(d);
     }
   }
   return disks;
 }
 
+double normal_cdf(double z)
+{
+  return 0.5 * (1.0 + std::erf(z / std::sqrt(2.0)));
+}
+
+namespace
+{
+// How far an uncertain disk paints beyond its radius, in sigmas.
+constexpr double kReachSigmas = 3.0;
+
+double reach(const Disk & d)
+{
+  return d.sigma > 0.0 ? d.radius + kReachSigmas * d.sigma : d.radius;
+}
+}  // namespace
+
 BoundingBox bounding_box(const std::vector<Disk> & disks)
 {
   BoundingBox box;
   for (const auto & d : disks) {
+    const double r = reach(d);
     if (box.empty) {
       box.empty = false;
-      box.min_x = d.x - d.radius;
-      box.max_x = d.x + d.radius;
-      box.min_y = d.y - d.radius;
-      box.max_y = d.y + d.radius;
+      box.min_x = d.x - r;
+      box.max_x = d.x + r;
+      box.min_y = d.y - r;
+      box.max_y = d.y + r;
     } else {
-      box.min_x = std::min(box.min_x, d.x - d.radius);
-      box.max_x = std::max(box.max_x, d.x + d.radius);
-      box.min_y = std::min(box.min_y, d.y - d.radius);
-      box.max_y = std::max(box.max_y, d.y + d.radius);
+      box.min_x = std::min(box.min_x, d.x - r);
+      box.max_x = std::max(box.max_x, d.x + r);
+      box.min_y = std::min(box.min_y, d.y - r);
+      box.max_y = std::max(box.max_y, d.y + r);
     }
   }
   return box;
@@ -74,6 +97,31 @@ std::vector<PaintedCell> rasterise(const std::vector<Disk> & disks, const GridSp
           static_cast<int>(std::clamp(a, 0.0, static_cast<double>(size))),
           static_cast<int>(std::clamp(b, -1.0, static_cast<double>(size - 1))));
       };
+    if (d.sigma > 0.0) {
+      // Uncertain disk: occupancy probability of the inflated disk, times the time weight.
+      const double r = reach(d);
+      const auto xr = cell_range(d.x - r, d.x + r, grid.origin_x, grid.size_x);
+      const auto yr = cell_range(d.y - r, d.y + r, grid.origin_y, grid.size_y);
+      for (int j = yr.first; j <= yr.second; ++j) {
+        const double cy = grid.origin_y + (j + 0.5) * grid.resolution;
+        for (int i = xr.first; i <= xr.second; ++i) {
+          const double cx = grid.origin_x + (i + 0.5) * grid.resolution;
+          const double dist = std::hypot(cx - d.x, cy - d.y);
+          if (dist > r) {
+            continue;
+          }
+          const double cost = std::min(
+            std::round(d.peak * normal_cdf((d.radius - dist) / d.sigma)),
+            static_cast<double>(kMaxHazardCost));
+          if (cost < 1.0) {
+            continue;
+          }
+          auto & slot = best[{i, j}];
+          slot = std::max(slot, static_cast<uint8_t>(cost));
+        }
+      }
+      continue;
+    }
     const auto xr = cell_range(d.x - d.radius, d.x + d.radius, grid.origin_x, grid.size_x);
     const auto yr = cell_range(d.y - d.radius, d.y + d.radius, grid.origin_y, grid.size_y);
     const int i0 = xr.first, i1 = xr.second, j0 = yr.first, j1 = yr.second;
