@@ -26,7 +26,7 @@ Parts marked done are on `main` and covered by CI; the simulation runs on a CPU 
 | Dynamic scenarios (crossing, head-on, crowd) and ground-truth scoring | done |
 | Hazard layer: velocity-aware costmap from tracked obstacles (oracle or camera) | done |
 | Experiments: repeated matrices, resumable runner, bootstrap statistics | done |
-| Hybrid: camera depth + flow Kalman fusion, risk cost, time-to-collision speed governor | in progress |
+| Hybrid: lidar–camera Kalman fusion, risk cost, time-to-collision speed governor ([docs/hybrid.md](docs/hybrid.md)) | done |
 
 ## Pipeline
 
