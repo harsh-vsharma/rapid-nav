@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "nav2_core/planner_exceptions.hpp"
-#include "nav2_util/node_utils.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
 namespace rapid_nav_planner
@@ -58,7 +57,7 @@ geometry_msgs::msg::Quaternion quaternion_of(double yaw)
 }  // namespace
 
 void GridPlanner::configure(
-  const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
+  const compat::LifecycleNode::WeakPtr & parent,
   std::string name, std::shared_ptr<tf2_ros::Buffer> /*tf*/,
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
@@ -71,7 +70,7 @@ void GridPlanner::configure(
   global_frame_ = costmap_ros_->getGlobalFrameID();
 
   const auto declare = [this](const std::string & key, const rclcpp::ParameterValue & value) {
-      nav2_util::declare_parameter_if_not_declared(node_, name_ + "." + key, value);
+      compat::declare_parameter_if_not_declared(node_, name_ + "." + key, value);
     };
   declare("algorithm", rclcpp::ParameterValue(std::string("astar")));
   declare("cost_weight", rclcpp::ParameterValue(2.0));
@@ -146,8 +145,19 @@ void GridPlanner::publish_stats(
 nav_msgs::msg::Path GridPlanner::createPlan(
   const geometry_msgs::msg::PoseStamped & start,
   const geometry_msgs::msg::PoseStamped & goal,
+#if RAPID_NAV_NAV2_ROS_COMMON
+  const std::vector<geometry_msgs::msg::PoseStamped> & viapoints,
+#endif
   std::function<bool()> cancel_checker)
 {
+#if RAPID_NAV_NAV2_ROS_COMMON
+  if (!viapoints.empty()) {
+    // Nav2 1.5 can pass via points; this planner plans from start to goal only, as on Jazzy.
+    RCLCPP_WARN_ONCE(
+      node_->get_logger(), "GridPlanner '%s' ignores the %zu via points", name_.c_str(),
+      viapoints.size());
+  }
+#endif
   const auto started = std::chrono::steady_clock::now();
   nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
   const unsigned int size_x = costmap->getSizeInCellsX();

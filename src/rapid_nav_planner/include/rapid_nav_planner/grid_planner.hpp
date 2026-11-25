@@ -10,16 +10,17 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav2_core/global_planner.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "rapid_nav_planner/compat.hpp"
 #include "rapid_nav_planner/grid_search.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_msgs/msg/string.hpp"
-#include "tf2_ros/buffer.h"
+#include "tf2_ros/buffer.hpp"
 
 namespace rapid_nav_planner
 {
@@ -31,7 +32,7 @@ public:
   ~GridPlanner() override = default;
 
   void configure(
-    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
+    const compat::LifecycleNode::WeakPtr & parent,
     std::string name, std::shared_ptr<tf2_ros::Buffer> tf,
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
   void cleanup() override;
@@ -41,6 +42,9 @@ public:
   nav_msgs::msg::Path createPlan(
     const geometry_msgs::msg::PoseStamped & start,
     const geometry_msgs::msg::PoseStamped & goal,
+#if RAPID_NAV_NAV2_ROS_COMMON
+    const std::vector<geometry_msgs::msg::PoseStamped> & viapoints,
+#endif
     std::function<bool()> cancel_checker) override;
 
 private:
@@ -48,7 +52,7 @@ private:
     const std::string & status, std::size_t expansions, double cost, std::size_t cells,
     double time_ms);
 
-  rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
+  compat::LifecycleNode::SharedPtr node_;
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   std::string name_;
   std::string algorithm_name_;

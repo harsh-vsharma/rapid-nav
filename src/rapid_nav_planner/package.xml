@@ -13,6 +13,8 @@
   <author>Harsh Vardhan</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- Nav2 1.5 (Lyrical) packages need it at build time but do not pull it in -->
+  <build_depend>nav2_common</build_depend>
 
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
