@@ -3,7 +3,7 @@
 <package format="3">
   <name>rapid_nav_perception</name>
   <version>0.1.0</version>
-  <description>Optical flow for the RAPID-NAV robot: Farnebäck and RAFT backends, back-projection, the flow colour picture and the flow node.</description>
+  <description>Optical flow for the RAPID-NAV robot: Farnebäck, RAFT and frame-routing (FlowNetS / SEA-RAFT) backends, back-projection, the flow colour picture and the flow node.</description>
   <maintainer email="harsh.v.sharma@outlook.com">Harsh Vardhan</maintainer>
   <license>MIT</license>
 

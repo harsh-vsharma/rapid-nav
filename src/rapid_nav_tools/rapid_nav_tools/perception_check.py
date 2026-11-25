@@ -374,7 +374,7 @@ def check_flow_arrival(node, report):
     first = node.first_flow
     report.add('flow backend', first.backend, 'INFO', 'INFO')
     report.add('flow size', '{}x{}'.format(first.flow.width, first.flow.height),
-               '320x240 (default)', 'INFO')
+               '640x480 (default)', 'INFO')
     report.add('flow frame id', first.header.frame_id, 'camera_optical_frame',
                verdict_of(first.header.frame_id == 'camera_optical_frame'))
     return True

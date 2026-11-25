@@ -41,6 +41,8 @@ the depth image nearest in time to the second one. Two backends are built behind
 - `farneback`: OpenCV's dense Farnebäck flow on grey images; no weights; always available.
 - `raft_small`, `raft_large`: torchvision's RAFT; needs PyTorch, which is optional. Without it the node runs Farnebäck
   and says so in one warning.
+- `frame_route`: whole-frame routing between FlowNetS (calm frames) and streaming SEA-RAFT-S (fast frames, and the
+  pair at motion onset); needs PyTorch and two checkpoints. The message's `backend` field names the network that ran.
 
 Each result is one `rapid_nav_msgs/FlowFrame`: the flow (`32FC2`), the depth resized to the flow size, the camera
 intrinsics scaled to that size, both stamps, the backend that ran and the compute latency. The stage that follows
