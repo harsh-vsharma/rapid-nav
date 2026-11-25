@@ -4,49 +4,50 @@
 
 [![ci](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml/badge.svg)](https://github.com/harsh-vsharma/rapid-nav/actions/workflows/ci.yml)
 
-A differential-drive mobile robot in Gazebo that uses optical flow to see which things move. Fast flow (FlowNetS) is
-used by default, and accurate flow (RAFT) is used when a reliability check fails. The robot's own motion is removed
-with depth, the IMU and wheel odometry, and the remaining motion becomes hazards in the Nav2 local costmap.
+A differential-drive mobile robot in Gazebo that sees moving obstacles with its RGB-D camera. Optical flow (RAFT, or
+FlowNetS / SEA-RAFT routed per frame) gives image motion; depth and the robot's pose remove the robot's own motion;
+the remaining motion becomes tracked obstacles with velocities, which a velocity-aware Nav2 costmap layer turns into
+predicted hazards for the planners and controllers.
 
 A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT Mandi.
 
 ## Status
 
-The robot, the simulation, the optical flow, the global planning (localisation on the map, the planner server with
-our planners), the local control (Nav2's controller and behaviour servers, with our dynamic window controller) and the
-moving obstacles with their scenarios are in testing; the other parts are planned.
+Parts marked done are on `main` and covered by CI; the simulation runs on a CPU at a reduced real-time factor
+(`rtf:=0.25`) when the camera source is used.
 
-| Part | Stage | Status |
-|---|---|---|
-| Robot and simulation | S1 | in testing |
-| Perception | S2 | in testing |
-| Ego-motion compensation | S3 | planned |
-| Dynamic scenarios: moving obstacles and the geometry baseline | S4 | in testing |
-| Navigation baseline: global planning | S5 | in testing |
-| Local control: our DWA, DWB and RPP, goal runs on ground truth | S6 | in testing |
-| Hazard layer: velocity-aware costmap from tracked obstacles (oracle source) | S7 | in testing |
-| Camera-based obstacle tracks: the flow source of the hazard layer | S3 | in testing |
-| Adaptive flow | S8 | planned |
-| Experiments: repeated matrices, runner, statistics | S9 | in testing |
+| Part | Status |
+|---|---|
+| Robot and simulation (Gazebo Harmonic arena, RGB-D camera, lidar, IMU) | done |
+| Optical flow: Farnebäck, RAFT-Small/Large, `frame_route` (FlowNetS / SEA-RAFT-S) | done |
+| Ego-motion removal and camera-based obstacle tracks (`flow_tracker`) | done |
+| Global planning: our Dijkstra / A* / Theta* plugin vs NavFn, Smac 2D | done |
+| Local control: our DWA vs DWB and RPP | done |
+| Dynamic scenarios (crossing, head-on, crowd) and ground-truth scoring | done |
+| Hazard layer: velocity-aware costmap from tracked obstacles (oracle or camera) | done |
+| Experiments: repeated matrices, resumable runner, bootstrap statistics | done |
+| Hybrid: camera depth + flow Kalman fusion, risk cost, time-to-collision speed governor | in progress |
 
 ## Pipeline
 
 ```mermaid
 flowchart LR
-    cam[RGB-D camera] --> flow[FlowNetS flow]
-    flow --> gate{reliability gate}
-    gate -- keep --> sel[selected flow]
-    gate -- unreliable --> raft[RAFT flow]
-    raft --> sel
-    sel --> ego[ego-motion removal<br/>depth, IMU + wheel odometry EKF]
-    ego --> res[residual motion]
-    res --> haz[hazard points]
-    haz --> cost[Nav2 local costmap]
-    cost --> dwb[DWB]
-    dwb --> cmd[cmd_vel]
+    cam[RGB-D camera] --> flow[optical flow<br/>RAFT or frame_route]
+    cam --> depth[depth]
+    flow --> ego[ego-motion removal<br/>depth + camera pose]
+    depth --> ego
+    ego --> trk[moving-obstacle tracks<br/>position, velocity]
+    trk --> haz[hazard layer<br/>predicted disks]
+    haz --> cost[Nav2 costmaps]
+    cost --> plan[planner]
+    cost --> ctrl[controller: DWA, DWB or RPP]
+    ctrl --> cmd[cmd_vel]
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the design.
+See [docs/architecture.md](docs/architecture.md) for the design, [docs/perception.md](docs/perception.md) for the
+vision side, [docs/navigation.md](docs/navigation.md) for planning and control, and
+[docs/experiments.md](docs/experiments.md) for the experiments. The `frame_route` backend's benchmark is in
+[docs/frame-route-report.md](docs/frame-route-report.md).
 
 ## Repository layout
 
