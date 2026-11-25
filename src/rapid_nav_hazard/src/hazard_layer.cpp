@@ -14,10 +14,11 @@
 #include "nav2_costmap_2d/costmap_2d.hpp"
 #include "nav2_costmap_2d/layered_costmap.hpp"
 #include "pluginlib/class_list_macros.hpp"
-#include "tf2/LinearMath/Quaternion.h"
-#include "tf2/LinearMath/Transform.h"
-#include "tf2/time.h"
-#include "tf2_ros/buffer.h"
+#include "rapid_nav_hazard/compat.hpp"
+#include "tf2/LinearMath/Quaternion.hpp"
+#include "tf2/LinearMath/Transform.hpp"
+#include "tf2/time.hpp"
+#include "tf2_ros/buffer.hpp"
 
 namespace rapid_nav_hazard
 {
@@ -28,16 +29,24 @@ void HazardLayer::onInitialize()
   if (!node) {
     throw std::runtime_error("HazardLayer: the parent node has expired");
   }
-  declareParameter("enabled", rclcpp::ParameterValue(true));
-  declareParameter("topic", rclcpp::ParameterValue(std::string("/obstacles/tracked")));
-  declareParameter("horizon_s", rclcpp::ParameterValue(params_.horizon_s));
-  declareParameter("time_step_s", rclcpp::ParameterValue(params_.time_step_s));
-  declareParameter("robot_radius", rclcpp::ParameterValue(params_.robot_radius));
-  declareParameter("margin", rclcpp::ParameterValue(params_.margin));
-  declareParameter("max_cost", rclcpp::ParameterValue(params_.max_cost));
-  declareParameter("min_cost", rclcpp::ParameterValue(params_.min_cost));
-  declareParameter("min_speed", rclcpp::ParameterValue(params_.min_speed));
-  declareParameter("max_age_s", rclcpp::ParameterValue(params_.max_age_s));
+  // Nav2 1.5 dropped Layer::declareParameter; declare under the same full name ("<layer>.<param>").
+  const auto declare = [&](const std::string & param, const rclcpp::ParameterValue & value) {
+#if RAPID_NAV_NAV2_ROS_COMMON
+      nav2::declare_parameter_if_not_declared(node, name_ + "." + param, value);
+#else
+      declareParameter(param, value);
+#endif
+    };
+  declare("enabled", rclcpp::ParameterValue(true));
+  declare("topic", rclcpp::ParameterValue(std::string("/obstacles/tracked")));
+  declare("horizon_s", rclcpp::ParameterValue(params_.horizon_s));
+  declare("time_step_s", rclcpp::ParameterValue(params_.time_step_s));
+  declare("robot_radius", rclcpp::ParameterValue(params_.robot_radius));
+  declare("margin", rclcpp::ParameterValue(params_.margin));
+  declare("max_cost", rclcpp::ParameterValue(params_.max_cost));
+  declare("min_cost", rclcpp::ParameterValue(params_.min_cost));
+  declare("min_speed", rclcpp::ParameterValue(params_.min_speed));
+  declare("max_age_s", rclcpp::ParameterValue(params_.max_age_s));
 
   std::string topic;
   node->get_parameter(name_ + ".enabled", enabled_);
@@ -55,8 +64,8 @@ void HazardLayer::onInitialize()
     params_.max_cost, static_cast<int>(nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) - 1);
   params_.min_cost = std::min(params_.min_cost, params_.max_cost);
 
-  sub_ = node->create_subscription<rapid_nav_msgs::msg::TrackedObstacleArray>(
-    topic, rclcpp::QoS(1).reliable(),
+  sub_ = compat::create_subscription<rapid_nav_msgs::msg::TrackedObstacleArray>(
+    node, topic, rclcpp::QoS(1).reliable(),
     [this](rapid_nav_msgs::msg::TrackedObstacleArray::ConstSharedPtr msg) {on_message(msg);});
   current_ = true;
   RCLCPP_INFO(logger_, "HazardLayer '%s' listens on %s", name_.c_str(), topic.c_str());
