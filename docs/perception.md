@@ -32,7 +32,7 @@ processing size, and the camera intrinsics are scaled to the same size.
 The latencies are the time of the flow computation alone, measured with random images (T1 probe). In a running
 simulation the latency is higher, because the simulator and the flow share the CPU: in the S2 check on the Mac,
 the median was 11.7 ms for Farnebäck and 1.40 s for RAFT-Small, with the real-time factor of the simulation at about
-0.4. On a native machine with a GPU, `flow_device:=cuda` runs RAFT on the GPU.
+0.4. On a native machine with a GPU, RAFT runs on it automatically (the device is `auto`; `perception.launch.py device:=cpu|cuda` forces one).
 
 PyTorch is optional. Without it, asking for a RAFT backend gives Farnebäck and one warning:
 
@@ -182,7 +182,7 @@ with a message that says where it looked.
 ```bash
 mkdir -p ~/.cache/rapid_nav/flownets
 cp flownets_EPE1.951.pth.tar ~/.cache/rapid_nav/flownets/
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=frame_route
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=frame_route
 ```
 
 The network code is vendored without changes to the layer names, so the released checkpoints load strictly:
@@ -194,9 +194,9 @@ The network code is vendored without changes to the layer names, so the released
 The simulation starts the flow node when asked:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=raft_small flow_device:=cuda
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=farneback
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=raft_small
 ```
 
 The launch file can also be run alone, while a simulation is already running:
@@ -246,7 +246,7 @@ head -n 1 "$(ros2 pkg prefix rapid_nav_perception)/lib/rapid_nav_perception/flow
 
 The last line must print `#!/usr/bin/env python3`, so the flow node runs with the environment's Python.
 
-To confirm that RAFT is used, start the simulation with `perception:=true` and look for the startup line. It should read
+To confirm that RAFT is used, start the simulation with `stack:=perception` and look for the startup line. It should read
 `flow_node: backend=raft_small device=cpu size=640x480 torch=2.x.y+cpu` (or `device=cuda` on a GPU). If the line reads
 `backend=farneback torch=none`, PyTorch was not found: check that the environment is active in the shell that
 runs the launch file.

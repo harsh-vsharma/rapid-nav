@@ -12,9 +12,8 @@ EKF = os.path.join(PACKAGE, 'config', 'ekf.yaml')
 SIM_LAUNCH = os.path.join(PACKAGE, 'launch', 'sim.launch.py')
 
 EXPECTED_ARGUMENTS = {
-    'world', 'headless', 'rviz', 'odom_tf', 'x', 'y', 'yaw', 'planning',
-    'navigation', 'controller', 'scenario', 'rtf', 'hazards', 'perception', 'flow_backend',
-    'flow_device', 'governor',
+    'stack', 'scan_filter', 'hazards', 'scenario', 'controller', 'governor', 'rtf', 'flow_backend',
+    'headless', 'world', 'x', 'y', 'yaw', 'odom_tf',
 }
 
 
@@ -116,3 +115,115 @@ def test_hazards_rejects_other_values():
         assert 'hazards' in str(error)
     else:
         raise AssertionError('expected RuntimeError')
+
+
+def load_sim_launch():
+    """Import sim.launch.py of this package."""
+    spec = importlib.util.spec_from_file_location('sim_launch', SIM_LAUNCH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def expect_error(function, *args, words=()):
+    """Call the function, expect a RuntimeError whose message holds every word."""
+    try:
+        function(*args)
+    except RuntimeError as error:
+        for word in words:
+            assert word in str(error)
+    else:
+        raise AssertionError('expected RuntimeError')
+
+
+def test_arguments_accept_the_defaults_and_the_filter():
+    """The defaults pass; other spawns off navigation; the filter with navigation and fused."""
+    check = load_sim_launch().check_arguments
+    check('sim', 'false', 'off', 'dwa', 'true', 'ekf', '0.0', '0.0', '0.0')
+    check('planning', 'false', 'off', 'rpp', 'false', 'wheel', '1.0', '2.0', '0.5')
+    check('navigation', 'false', 'flow', 'dwb', 'true', 'ekf', '0', '0', '0')
+    check('navigation', 'true', 'fused', 'dwb', 'true', 'ekf', '0', '0', '0')
+
+
+def test_arguments_reject_bad_values_and_combinations():
+    """Reject unknown values, navigation off the default spawn, the filter without its inputs."""
+    check = load_sim_launch().check_arguments
+    ok = ['navigation', 'true', 'fused', 'dwb', 'true', 'ekf', '0', '0', '0']
+    for index, bad, word in ((0, 'everything', 'stack'), (1, 'maybe', 'scan_filter'),
+                             (2, 'radar', 'hazards'), (3, 'mpc', 'controller'),
+                             (4, 'yes', 'governor'), (5, 'gps', 'odom_tf')):
+        args = list(ok)
+        args[index] = bad
+        expect_error(check, *args, words=(word,))
+    expect_error(check, 'navigation', 'false', 'off', 'dwb', 'true', 'ekf', '1.0', '0', '0',
+                 words=('spawn',))
+    expect_error(check, 'navigation', 'false', 'off', 'dwb', 'true', 'ekf', '0', '0', '0.5',
+                 words=('spawn',))
+    expect_error(check, 'navigation', 'true', 'flow', 'dwb', 'true', 'ekf', '0', '0', '0',
+                 words=('hazards:=fused',))
+    expect_error(check, 'planning', 'true', 'fused', 'dwb', 'true', 'ekf', '0', '0', '0',
+                 words=('stack:=navigation',))
+
+
+def test_slam_config_sets_the_scan_topic_and_the_clock():
+    """slam_config writes the chosen scan topic and use_sim_time into slam_toolbox's block."""
+    from ament_index_python.packages import get_package_share_directory
+    module, _ = load_navigation_launch()
+    share = get_package_share_directory('rapid_nav_navigation')
+    for topic in ('/scan', '/scan_static'):
+        path = module.slam_config(os.path.join(share, 'config', 'slam.yaml'), topic, True)
+        try:
+            with open(path, encoding='utf-8') as handle:
+                params = yaml.safe_load(handle)['slam_toolbox']['ros__parameters']
+        finally:
+            os.remove(path)
+        assert params['scan_topic'] == topic
+        assert params['use_sim_time'] is True
+        assert params['map_frame'] == 'map' and params['odom_frame'] == 'odom'
+        assert params['base_frame'] == 'base_footprint'
+        assert params['resolution'] == 0.05
+
+
+def test_auto_arguments_give_the_demo_without_stack_and_the_old_defaults_with_it():
+    """Without `stack` everything is on; with it the experiment defaults apply."""
+    from launch import LaunchContext
+    spec = importlib.util.spec_from_file_location('sim_launch', SIM_LAUNCH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def context(**given):
+        ctx = LaunchContext()
+        values = {name: 'auto' for name in module.DEMO}
+        values.update(given)
+        ctx.launch_configurations.update(values)
+        return ctx
+
+    demo = context()
+    assert [module.resolve(demo, n) for n in ('stack', 'hazards', 'scan_filter', 'scenario')] == \
+        ['navigation', 'fused', 'true', 'crowd']
+    assert module.resolve(context(scenario='crossing'), 'scenario') == 'crossing'
+    old = context(stack='navigation')
+    assert [module.resolve(old, n) for n in ('hazards', 'scan_filter', 'scenario',
+                                             'flow_backend')] == \
+        ['off', 'false', '', 'raft_small']
+
+
+def test_slam_config_continues_a_saved_map_only_when_it_exists(tmp_path):
+    """slam_map_file is used when <path>.posegraph exists, ignored otherwise."""
+    module, _ = load_navigation_launch()
+    from ament_index_python.packages import get_package_share_directory
+    config = os.path.join(get_package_share_directory('rapid_nav_navigation'), 'config',
+                          'slam.yaml')
+    saved = str(tmp_path / 'demo_map')
+    for exists in (False, True):
+        if exists:
+            (tmp_path / 'demo_map.posegraph').write_text('x')
+        path = module.slam_config(config, '/scan', True, saved)
+        try:
+            with open(path, encoding='utf-8') as handle:
+                params = yaml.safe_load(handle)['slam_toolbox']['ros__parameters']
+        finally:
+            os.remove(path)
+        assert ('map_file_name' in params) == exists
+        if exists:
+            assert params['map_file_name'] == saved and params['map_start_at_dock'] is True

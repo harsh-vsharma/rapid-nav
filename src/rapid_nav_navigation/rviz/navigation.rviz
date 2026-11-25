@@ -1,287 +1,417 @@
 Panels:
-  - Class: rviz_common/Displays
-    Help Height: 78
-    Name: Displays
-    Property Tree Widget:
-      Expanded:
-        - /Global Options1
-        - /Map1
-        - /Costmap1
-        - /ParticleCloud1
-        - /Planned paths1
-      Splitter Ratio: 0.5
-    Tree Height: 600
-  - Class: rviz_common/Selection
-    Name: Selection
-  - Class: rviz_common/Tool Properties
-    Expanded:
-      - /2D Goal Pose1
-    Name: Tool Properties
-    Splitter Ratio: 0.5886790156364441
-  - Class: rviz_common/Views
-    Expanded:
-      - /Current View1
-    Name: Views
-    Splitter Ratio: 0.5
+- Class: rviz_common/Displays
+  Help Height: 0
+  Name: Displays
+  Property Tree Widget:
+    Expanded: []
+    Splitter Ratio: 0.6
+  Tree Height: 400
 Visualization Manager:
-  Class: ""
+  Class: ''
   Displays:
-    - Alpha: 0.5
-      Cell Size: 1
-      Class: rviz_default_plugins/Grid
-      Color: 160; 160; 164
-      Enabled: true
-      Name: Grid
-      Plane: XY
-      Plane Cell Count: 20
-      Reference Frame: <Fixed Frame>
-      Value: true
-    - Alpha: 0.7
-      Class: rviz_default_plugins/Map
-      Color Scheme: map
-      Draw Behind: false
-      Enabled: true
-      Name: Map
-      Topic:
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /map
-      Update Topic:
-        Value: /map_updates
-      Value: true
-    - Alpha: 0.4
-      Class: rviz_default_plugins/Map
-      Color Scheme: costmap
-      Draw Behind: false
-      Enabled: true
-      Name: Costmap
-      Topic:
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /global_costmap/costmap
-      Update Topic:
-        Value: /global_costmap/costmap_updates
-      Value: true
+  - Alpha: 0.12
+    Cell Size: 1
+    Class: rviz_default_plugins/Grid
+    Color: 120; 125; 135
+    Enabled: true
+    Line Style:
+      Line Width: 0.03
+      Value: Lines
+    Name: Grid
+    Normal Cell Count: 0
+    Offset:
+      X: 0
+      Y: 0
+      Z: 0
+    Plane: XY
+    Plane Cell Count: 30
+    Reference Frame: <Fixed Frame>
+    Value: true
+  - Alpha: 0.35
+    Class: rviz_default_plugins/Map
+    Color Scheme: map
+    Draw Behind: true
+    Enabled: true
+    Name: SLAM map
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      Filter size: 10
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /map
+    Update Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /map_updates
+    Use Timestamp: false
+    Value: true
+  - Alpha: 1
+    Class: rviz_default_plugins/RobotModel
+    Collision Enabled: false
+    Description File: ''
+    Description Source: Topic
+    Description Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /robot_description
+    Enabled: true
+    Links:
+      All Links Enabled: true
+      Expand Joint Details: false
+      Expand Link Details: false
+      Expand Tree: false
+      Link Tree Style: Links in Alphabetic Order
+    Mass Properties:
+      Inertia: false
+      Mass: false
+    Name: Robot
+    TF Prefix: ''
+    Update Interval: 0
+    Value: true
+    Visual Enabled: true
+  - Class: rviz_default_plugins/Marker
+    Enabled: true
+    Name: Lidar outline
+    Namespaces:
+      scan: true
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/scan_lines
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Flow
+    Namespaces:
+      flow_mesh: true
+      velocity: true
+      rotation: true
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/flow
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Predicted obstacles
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/predictions
+    Value: true
+  - Class: rviz_default_plugins/MarkerArray
+    Enabled: true
+    Name: Checkpoints
+    Namespaces: {}
+    Topic:
+      Depth: 5
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /viz/mission
+    Value: true
+  - Alpha: 1
+    Buffer Length: 1
+    Class: rviz_default_plugins/Path
+    Color: 90; 200; 250
+    Enabled: true
+    Head Diameter: 0.3
+    Head Length: 0.2
+    Length: 0.3
+    Line Style: Billboards
+    Line Width: 0.03
+    Name: Plan
+    Offset:
+      X: 0
+      Y: 0
+      Z: 0.01
+    Pose Color: 90; 200; 250
+    Pose Style: None
+    Radius: 0.03
+    Shaft Diameter: 0.1
+    Shaft Length: 0.1
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /plan
+    Value: true
+  - Alpha: 1
+    Buffer Length: 1
+    Class: rviz_default_plugins/Path
+    Color: 140; 240; 120
+    Enabled: true
+    Head Diameter: 0.3
+    Head Length: 0.2
+    Length: 0.3
+    Line Style: Billboards
+    Line Width: 0.04
+    Name: Local plan
+    Offset:
+      X: 0
+      Y: 0
+      Z: 0.01
+    Pose Color: 140; 240; 120
+    Pose Style: None
+    Radius: 0.03
+    Shaft Diameter: 0.1
+    Shaft Length: 0.1
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /local_plan
+    Value: true
+  - Class: rviz_common/Group
+    Enabled: true
+    Name: Planner comparison
+    Displays:
     - Alpha: 1
-      Arrow Length: 0.3
-      Axes Length: 0.3
-      Axes Radius: 0.02
-      Class: rviz_default_plugins/PoseArray
-      Color: 255; 25; 0
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 230; 120; 90
       Enabled: true
-      Name: ParticleCloud
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /particle_cloud
-      Value: true
-    - Alpha: 1
-      Class: rviz_default_plugins/RobotModel
-      Collision Enabled: false
-      Description Source: Topic
-      Description Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /robot_description
-      Enabled: true
-      Name: RobotModel
-      TF Prefix: ""
-      Update Interval: 0
-      Value: true
-      Visual Enabled: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Class: rviz_default_plugins/LaserScan
-      Color: 255; 255; 255
-      Color Transformer: FlatColor
-      Enabled: true
-      Name: LaserScan
-      Size (m): 0.03
-      Style: Points
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /scan
-      Value: true
-    - Class: rviz_common/Group
-      Displays:
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 255; 0; 0
-          Enabled: true
-          Name: RapidAStar
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/RapidAStar
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 255; 128; 0
-          Enabled: true
-          Name: RapidAStarSmooth
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/RapidAStarSmooth
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 255; 255; 0
-          Enabled: true
-          Name: RapidDijkstra
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/RapidDijkstra
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 0; 255; 0
-          Enabled: true
-          Name: RapidThetaStar
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/RapidThetaStar
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 0; 255; 255
-          Enabled: true
-          Name: NavFn
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/NavFn
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 0; 0; 255
-          Enabled: true
-          Name: Smac2D
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/Smac2D
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 255; 0; 255
-          Enabled: true
-          Name: NavThetaStar
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /planned_paths/NavThetaStar
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 0; 255; 255
-          Enabled: true
-          Name: Plan (navigation)
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /plan
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 0; 255; 0
-          Enabled: true
-          Name: Local plan (controller)
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /local_plan
-          Value: true
-      Enabled: true
-      Name: Planned paths
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: Moving obstacles
-      Namespaces:
-        scenario: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: RapidAStar
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 230; 120; 90
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /scenario/obstacles
+        Value: /planned_paths/RapidAStar
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 240; 180; 90
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: RapidAStarSmooth
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 240; 180; 90
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/RapidAStarSmooth
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 200; 200; 110
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: RapidDijkstra
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 200; 200; 110
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/RapidDijkstra
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 140; 210; 130
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: RapidThetaStar
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 140; 210; 130
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/RapidThetaStar
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 120; 170; 240
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: NavFn
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 120; 170; 240
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/NavFn
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 180; 140; 230
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: Smac2D
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 180; 140; 230
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/Smac2D
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 230; 140; 190
+      Enabled: true
+      Head Diameter: 0.3
+      Head Length: 0.2
+      Length: 0.3
+      Line Style: Billboards
+      Line Width: 0.02
+      Name: NavThetaStar
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.01
+      Pose Color: 230; 140; 190
+      Pose Style: None
+      Radius: 0.03
+      Shaft Diameter: 0.1
+      Shaft Length: 0.1
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planned_paths/NavThetaStar
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 24; 26; 30
     Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:
-    - Class: rviz_default_plugins/Interact
-      Hide Inactive Objects: true
-    - Class: rviz_default_plugins/MoveCamera
-    - Class: rviz_default_plugins/Select
-    - Class: rviz_default_plugins/Measure
-    - Class: nav2_rviz_plugins/GoalTool
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /goal_pose
+  - Class: rviz_default_plugins/Interact
+    Hide Inactive Objects: true
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Measure
+    Line color: 128; 128; 0
+  - Class: nav2_rviz_plugins/GoalTool
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /goal_pose
   Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 14
+      Distance: 12
       Focal Point:
         X: 0
         Y: 0
         Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
       Name: Current View
-      Pitch: 1.2
-      Target Frame: <Fixed Frame>
+      Near Clip Distance: 0.01
+      Pitch: 1.1
+      Target Frame: base_footprint
       Value: Orbit (rviz)
-      Yaw: 0.0
-    Saved: ~
+      Yaw: 3.14
+    Saved: null
 Window Geometry:
+  Displays:
+    collapsed: false
   Height: 1000
+  Hide Left Dock: false
+  Hide Right Dock: true
   Width: 1400
   X: 60
   Y: 60

@@ -21,7 +21,8 @@ stage named in the [README](../README.md) status table.
 4. **Hazards.** Residual motion, depth, reliability and persistence over several frames give hazard points. Each
    hazard point is projected ahead along its estimated motion and written into the Nav2 local costmap.
 
-5. **Navigation.** Nav2 with DWB plans and follows the path. AMCL localises the robot on a known map using the lidar.
+5. **Navigation.** Nav2 with DWB plans and follows the path. SLAM (slam_toolbox) builds the map from the lidar while
+   the robot drives and localises it in that map; there is no pre-built map.
 
 6. **Evaluation.** Configurations A–F come from the proposal:
    - A–C compare flow sources on a static costmap;
@@ -61,16 +62,23 @@ odom → base_footprint → base_link → { camera_link → camera_optical_frame
 ```
 
 `odom → base_footprint` comes from one publisher only: the robot_localization EKF by default, or the simulator's
-differential-drive transform with `odom_tf:=wheel`. The `map` frame is added with localisation in S5.
+differential-drive transform with `odom_tf:=wheel`. The `map` frame comes from localisation: `map → odom` is
+published by slam_toolbox in the navigation stack, and by AMCL in the planning stack (planner comparison only).
 
 ## Navigation
 
-The global side is built in S5 (details in [navigation.md](navigation.md)):
+The global side (details in [navigation.md](navigation.md)):
 
-- **Map.** Two occupancy maps (the arena and a maze) are generated from the arena's geometry and a fixed maze and
-  served by `map_server`.
-- **Localisation.** AMCL, on the laser scan, publishes `map → odom`; `odom → base_footprint` is unchanged.
-- **Global costmap.** The static map, inflated by the robot radius (0.25 m) out to 0.55 m.
+- **Map and localisation (navigation stack).** slam_toolbox (online async) builds the map from the lidar while the
+  robot drives and publishes `/map` and `map → odom`; there is no pre-built map. Its map frame starts at the robot, so
+  it is the arena frame only for the default spawn, which the launch requires. With `scan_filter:=true` SLAM maps
+  `/scan_static`, the scan without the beams on the fused tracks (`scan_filter_node`); the costmaps and fusion keep
+  the raw `/scan`. `fusion_node` runs with `map_mode: slam` (the map grows: unknown cells count as static) and the
+  track guard. Details: [slam.md](slam.md).
+- **Fixed maps (planning stack only).** Two occupancy maps (the arena and a maze) are generated from the arena's
+  geometry and a fixed maze, served by `map_server`, with AMCL on the arena. They are used to compare the planners
+  (`stack:=planning`, `planner_check`) and to score the runs (ground truth), never by the navigation stack.
+- **Global costmap.** The SLAM map and the lidar, inflated by the robot radius (0.25 m) out to 0.55 m.
 - **Planner server.** Nav2's planner server with seven planners selected by `planner_id`: our four (A*, A* with
   smoothing, Dijkstra and Theta*, one plugin, `rapid_nav_planner/GridPlanner`) and three from Nav2 for comparison.
 

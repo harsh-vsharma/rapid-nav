@@ -158,3 +158,53 @@ def test_two_crossing_movers_keep_their_ids():
             for tr in tracks:
                 expected = a if tr['id'] == ids['a'] else b
                 assert math.hypot(tr['x'] - expected[0], tr['y'] - expected[1]) < 0.15
+
+
+def test_known_free_none_is_the_fixed_map_behaviour():
+    occupied = room_grid().near  # any mask will do: compare the two constructions
+    plain = StaticGrid(occupied, -2.0, -2.0, 0.05)
+    same = StaticGrid(occupied, -2.0, -2.0, 0.05, known_free=None)
+    assert np.array_equal(plain.near, same.near)
+
+
+def test_unknown_cells_are_static_with_a_growing_map():
+    occupied = np.zeros((80, 80), dtype=bool)
+    known_free = np.zeros((80, 80), dtype=bool)
+    known_free[:, :40] = True  # only the left half (x < 0) has been seen
+    grid = StaticGrid(occupied, -2.0, -2.0, 0.05, known_free=known_free)
+    left = arc_points(-1.0, 0.5)
+    right = arc_points(1.0, 0.5)
+    assert len(lidar_clusters(np.vstack([left, right]), grid)) == 1
+    out = lidar_clusters(np.vstack([left, right]), grid)[0]
+    assert out['x'] < 0.0
+
+
+def test_grid_rebuilt_with_a_new_origin_and_size():
+    small = StaticGrid(np.zeros((40, 40), dtype=bool), -1.0, -1.0, 0.05,
+                       known_free=np.ones((40, 40), dtype=bool))
+    mover = arc_points(1.5, 0.0)
+    assert lidar_clusters(mover, small) == []  # outside the small map: static
+    grown = StaticGrid(np.zeros((80, 80), dtype=bool), -2.0, -2.0, 0.05,
+                       known_free=np.ones((80, 80), dtype=bool))
+    assert len(lidar_clusters(mover, grown)) == 1
+
+
+def test_guard_keeps_a_mover_whose_cells_became_occupied():
+    occupied = np.zeros((80, 80), dtype=bool)
+    occupied[45:55, 55:65] = True  # the mover around (1.0, 0.5) has been mapped
+    grid = StaticGrid(occupied, -2.0, -2.0, 0.05, known_free=~occupied)
+    points = arc_points(1.0, 0.5)
+    assert lidar_clusters(points, grid) == []
+    assert len(lidar_clusters(points, grid, keep=[(1.0, 0.5, 0.4)])) == 1
+    assert lidar_clusters(points, grid, keep=[(-1.0, -1.0, 0.4)]) == []
+
+
+def test_guard_disks_are_the_confirmed_moving_tracks():
+    fusion = Fusion()
+    assert fusion.guard_disks(0.0) == []
+    t = lidar_only(fusion, 30)
+    disks = fusion.guard_disks(t)
+    assert len(disks) == 1
+    x, y, r = disks[0]
+    assert abs(x - (-1.5 + 0.5 * t)) < 0.2 and abs(y - 0.5) < 0.2 and r > 0.25
+    assert fusion.guard_disks(t, min_speed=5.0) == []

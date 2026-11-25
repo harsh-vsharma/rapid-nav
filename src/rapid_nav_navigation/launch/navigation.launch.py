@@ -1,17 +1,27 @@
-"""Start the navigation stack: the map, AMCL, the planner, the controller, the behaviour server and
-the BT navigator, under one lifecycle manager."""
+"""
+Start the navigation stack: SLAM, the planner, the controller, the behaviour server and the BT
+navigator.
+
+slam_toolbox (online async) builds the map from the lidar while the robot drives and publishes
+/map and map -> odom; there is no pre-built map and no AMCL. It configures and activates itself,
+as in slam_toolbox's own launch, outside the lifecycle manager, which runs the Nav2 servers.
+The map frame starts at the robot, so the simulation must spawn it at the arena origin
+(sim.launch.py checks that).
+"""
 
 import os
 import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, EmitEvent, OpaqueFunction, RegisterEventHandler
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
+from lifecycle_msgs.msg import Transition
 import yaml
 
-BUILT_IN_MAPS = ('arena', 'maze')
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
 HAZARDS = ('off', 'oracle', 'oracle_static', 'flow', 'fused')
 
@@ -19,8 +29,6 @@ HAZARDS = ('off', 'oracle', 'oracle_static', 'flow', 'fused')
 def generate_launch_description():
     """Declare the arguments; the nodes are built once their values are known."""
     return LaunchDescription([
-        DeclareLaunchArgument('map', default_value='arena',
-                              description="'arena', 'maze' or the path of a map YAML."),
         DeclareLaunchArgument('controller', default_value='dwa',
                               description="'dwa' (ours), 'dwb' (Nav2's DWB) or 'rpp' "
                                           "(Regulated Pure Pursuit)."),
@@ -33,21 +41,17 @@ def generate_launch_description():
                               description="With hazards 'fused': start the time-to-collision "
                                           "speed governor ('true') or not ('false', the "
                                           'ablation).'),
+        DeclareLaunchArgument('slam_scan_topic', default_value='/scan',
+                              description="The scan slam_toolbox maps ('/scan_static' with the "
+                                          'dynamic scan filter).'),
+        DeclareLaunchArgument('slam_map_file', default_value='',
+                              description='slam_toolbox pose graph to continue from (path '
+                                          'without extension; ignored while <path>.posegraph '
+                                          'does not exist). Empty: a new map.'),
         DeclareLaunchArgument('use_sim_time', default_value='true',
                               description='Use the simulated clock.'),
-        DeclareLaunchArgument('x', default_value='0.0', description='Initial pose x (m).'),
-        DeclareLaunchArgument('y', default_value='0.0', description='Initial pose y (m).'),
-        DeclareLaunchArgument('yaw', default_value='0.0', description='Initial pose yaw (rad).'),
         OpaqueFunction(function=launch_setup),
     ])
-
-
-def map_yaml_path(name):
-    """Return the YAML of a built-in map, or the given path."""
-    if name in BUILT_IN_MAPS:
-        return os.path.join(get_package_share_directory('rapid_nav_navigation'), 'maps',
-                            name + '.yaml')
-    return name
 
 
 def set_clock(section, use_sim_time):
@@ -96,6 +100,49 @@ def navigation_config(config_path, controller, use_sim_time, bt_xml, hazards='of
     return path
 
 
+def slam_config(config_path, scan_topic, use_sim_time, map_file=''):
+    """
+    Return a copy of the slam_toolbox YAML with this launch's scan topic and clock.
+
+    With map_file (a path without extension) whose .posegraph exists, slam_toolbox loads that
+    pose graph and keeps mapping from it, starting at its first pose (the spawn: the map frame
+    of the saved map starts there too).
+    """
+    with open(config_path, encoding='utf-8') as handle:
+        data = yaml.safe_load(handle)
+    params = data['slam_toolbox']['ros__parameters']
+    params['scan_topic'] = scan_topic
+    params['use_sim_time'] = use_sim_time
+    if map_file and os.path.isfile(map_file + '.posegraph'):
+        params['map_file_name'] = map_file
+        params['map_start_at_dock'] = True
+    descriptor, path = tempfile.mkstemp(prefix='slam_', suffix='.yaml')
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(data, handle)
+    return path
+
+
+def slam_nodes(config):
+    """Return slam_toolbox as a lifecycle node that configures and then activates itself."""
+    slam = LifecycleNode(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
+        namespace='',
+        output='screen',
+        parameters=[config, {'use_lifecycle_manager': False}],
+    )
+    configure = EmitEvent(event=ChangeState(
+        lifecycle_node_matcher=lambda action: action is slam,
+        transition_id=Transition.TRANSITION_CONFIGURE))
+    activate = RegisterEventHandler(OnStateTransition(
+        target_lifecycle_node=slam, start_state='configuring', goal_state='inactive',
+        entities=[EmitEvent(event=ChangeState(
+            lifecycle_node_matcher=lambda action: action is slam,
+            transition_id=Transition.TRANSITION_ACTIVATE))]))
+    return [slam, activate, configure]
+
+
 def launch_setup(context):
     """Resolve the arguments and build the nodes of the navigation stack."""
     share = get_package_share_directory('rapid_nav_navigation')
@@ -114,74 +161,25 @@ def launch_setup(context):
     config = navigation_config(
         os.path.join(share, 'config', 'navigation.yaml'), controller, use_sim_time,
         os.path.join(share, 'behavior_trees', 'navigate_rapid.xml'), hazards)
-    map_yaml = map_yaml_path(LaunchConfiguration('map').perform(context))
-    x = float(LaunchConfiguration('x').perform(context))
-    y = float(LaunchConfiguration('y').perform(context))
-    yaw = float(LaunchConfiguration('yaw').perform(context))
-
-    managed = ['map_server', 'amcl', 'planner_server', 'controller_server', 'behavior_server',
-               'bt_navigator']
-    extra = []
+    scan_topic = LaunchConfiguration('slam_scan_topic').perform(context).strip()
+    map_file = os.path.expanduser(LaunchConfiguration('slam_map_file').perform(context).strip())
+    nodes = slam_nodes(slam_config(os.path.join(share, 'config', 'slam.yaml'), scan_topic,
+                                   use_sim_time, map_file))
     if hazards == 'fused' and governor == 'true':
         # Reactive layer on top of the plan: a speed limit from the time to collision.
-        extra.append(Node(
-            package='rapid_nav_navigation',
-            executable='ttc_governor',
-            name='ttc_governor',
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time}],
+        nodes.append(Node(
+            package='rapid_nav_navigation', executable='ttc_governor', name='ttc_governor',
+            output='screen', parameters=[{'use_sim_time': use_sim_time}],
         ))
-    return extra + [
-        Node(
-            package='nav2_map_server',
-            executable='map_server',
-            name='map_server',
-            output='screen',
-            parameters=[config, {'yaml_filename': map_yaml}],
-        ),
-        Node(
-            package='nav2_amcl',
-            executable='amcl',
-            name='amcl',
-            output='screen',
-            parameters=[config, {
-                'initial_pose': {'x': x, 'y': y, 'z': 0.0, 'yaw': yaw},
-            }],
-        ),
-        Node(
-            package='nav2_planner',
-            executable='planner_server',
-            name='planner_server',
-            output='screen',
-            parameters=[config],
-        ),
-        Node(
-            package='nav2_controller',
-            executable='controller_server',
-            name='controller_server',
-            output='screen',
-            parameters=[config],
-        ),
-        Node(
-            package='nav2_behaviors',
-            executable='behavior_server',
-            name='behavior_server',
-            output='screen',
-            parameters=[config],
-        ),
-        Node(
-            package='nav2_bt_navigator',
-            executable='bt_navigator',
-            name='bt_navigator',
-            output='screen',
-            parameters=[config],
-        ),
-        Node(
-            package='nav2_lifecycle_manager',
-            executable='lifecycle_manager',
-            name='lifecycle_manager_navigation',
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time, 'autostart': True,
-                         'node_names': managed}],
-        ),
-    ]
+    servers = [('nav2_planner', 'planner_server'), ('nav2_controller', 'controller_server'),
+               ('nav2_behaviors', 'behavior_server'), ('nav2_bt_navigator', 'bt_navigator')]
+    for package, name in servers:
+        nodes.append(Node(package=package, executable=name, name=name, output='screen',
+                          parameters=[config]))
+    nodes.append(Node(
+        package='nav2_lifecycle_manager', executable='lifecycle_manager',
+        name='lifecycle_manager_navigation', output='screen',
+        parameters=[{'use_sim_time': use_sim_time, 'autostart': True,
+                     'node_names': [name for _, name in servers]}],
+    ))
+    return nodes

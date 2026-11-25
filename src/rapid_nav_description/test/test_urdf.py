@@ -157,13 +157,13 @@ def test_camera_follows_the_arguments():
 
 
 def test_default_camera_size_and_rate(model):
-    """Without arguments the camera is 640 x 480 at 30 Hz with a 69.4 degree field of view."""
+    """Without arguments the camera is 640 x 480 at 30 Hz with a 90 degree field of view."""
     root, _ = model
     camera = next(sensor for sensor in root.iter('sensor') if sensor.get('name') == 'rgbd_camera')
     assert camera.find('update_rate').text == '30'
     assert camera.find('camera/image/width').text == '640'
     assert camera.find('camera/image/height').text == '480'
-    assert abs(float(camera.find('camera/horizontal_fov').text) - 1.211) < 1e-9
+    assert abs(float(camera.find('camera/horizontal_fov').text) - 1.5708) < 1e-9
 
 
 def test_check_urdf_accepts_the_model(model):

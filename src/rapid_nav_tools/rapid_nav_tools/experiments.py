@@ -35,7 +35,45 @@ DEFAULT_COMPARISONS = (
     ('flow', 'oracle'),
     ('fused', 'flow'),
     ('fused', 'off'),
+    ('fused_filter', 'fused'),
+    ('fused_filter', 'off'),
 )
+
+HAZARD_WORDS = ('off', 'oracle', 'oracle_static', 'flow', 'fused')
+SLAM_FIELDS = ('slam_ate_m', 'map_precision', 'map_recall', 'map_f1', 'ghost_cells',
+               'mover_ghost_cells')
+
+
+# ---------------------------------------------------------------------------------------------
+# Conditions: the matrix word of a run (hazards, scan filter)
+# ---------------------------------------------------------------------------------------------
+
+def condition(word):
+    """
+    Return (hazards, scan_filter) of a matrix word.
+
+    A hazards word (off, oracle, oracle_static, flow, fused) runs the navigation stack with that
+    hazard source; 'fused_filter' also runs the dynamic scan filter in front of SLAM.
+    """
+    word = str(word)
+    if word in HAZARD_WORDS:
+        return word, False
+    if word == 'fused_filter':
+        return 'fused', True
+    raise ValueError('unknown condition {!r}'.format(word))
+
+
+def condition_word(hazards, scan_filter=False):
+    """Return the matrix word (and bundle tag) of a condition; the inverse of condition()."""
+    word = hazards + ('_filter' if scan_filter else '')
+    condition(word)
+    return word
+
+
+def nav_args(word):
+    """Return the scripts/dev.sh nav-smoke arguments after the controller for a matrix word."""
+    hazards, scan_filter = condition(word)
+    return [hazards] + (['--scan-filter'] if scan_filter else [])
 
 
 # ---------------------------------------------------------------------------------------------
@@ -75,6 +113,11 @@ def load_matrix(path):
     for key in ('scenarios', 'controllers', 'hazards'):
         if not matrix[key] or len(set(matrix[key])) != len(matrix[key]):
             raise ValueError('{}: {} must be a list without repeats'.format(path, key))
+    for word in matrix['hazards']:
+        try:
+            condition(word)
+        except ValueError as error:
+            raise ValueError('{}: {}'.format(path, error))
     return matrix
 
 
@@ -191,12 +234,14 @@ def parse_bundle(path):
     Return the per-run fields of a nav_run bundle.
 
     Keys: success, collisions, min_clearance, closest_approach, time, valid, reason (why it is
-    invalid, else ''), goals, goals_reached, rtf. A bundle that lacks a needed field is invalid
-    with the reason; its other fields are None.
+    invalid, else ''), goals, goals_reached, rtf, and the SLAM fields (SLAM_FIELDS, None without
+    SLAM). A bundle that lacks a needed field is invalid with the reason; its other fields are
+    None.
     """
     out = {'success': None, 'collisions': None, 'min_clearance': None, 'closest_approach': None,
            'time': None, 'valid': False, 'reason': '', 'goals': 0, 'goals_reached': 0,
            'rtf': None}
+    out.update({field: None for field in SLAM_FIELDS})
     results = _results_path(path)
     if results is None:
         out['reason'] = 'no results.json with goals'
@@ -204,6 +249,14 @@ def parse_bundle(path):
     with open(results, encoding='utf-8') as handle:
         data = json.load(handle)
     out['rtf'] = data.get('rtf')
+    slam = data.get('slam') or {}
+    trajectory = slam.get('trajectory') or {}
+    quality = (slam.get('map_quality') or {}).get('aligned') or {}
+    out['slam_ate_m'] = trajectory.get('ate_rmse_m')
+    for field, key in (('map_precision', 'precision'), ('map_recall', 'recall'),
+                       ('map_f1', 'f1'), ('ghost_cells', 'ghost_cells'),
+                       ('mover_ghost_cells', 'mover_ghost_cells')):
+        out[field] = quality.get(key)
     goals = data.get('goals')
     if not goals:
         out['reason'] = 'no goals'
@@ -251,6 +304,7 @@ def parse_index(directory):
                            'closest_approach': None, 'time': None, 'valid': False,
                            'reason': 'no bundle (exit {})'.format(row['exit_code']), 'goals': 0,
                            'goals_reached': 0, 'rtf': None})
+            record.update({field: None for field in SLAM_FIELDS})
         records.append(record)
     return records
 
@@ -489,11 +543,11 @@ def _runs_to_tsv(runs):
 
 
 def main(argv=None):
-    """Run a helper command of scripts/run_matrix.sh: name, expand, pending, valid or append."""
+    """Run a helper command of run_matrix.sh: name, expand, pending, valid, nav-args or append."""
     args = list(sys.argv[1:] if argv is None else argv)
     usage = ('usage: experiments name <matrix> | expand <matrix> | pending <matrix> <dir> | '
-             'valid <bundle> | append <index.csv> <scenario> <controller> <hazards> <repeat> '
-             '<bundle> <exit> <wall_s> <valid>')
+             'valid <bundle> | nav-args <condition> | append <index.csv> <scenario> '
+             '<controller> <hazards> <repeat> <bundle> <exit> <wall_s> <valid>')
     if not args:
         print(usage, file=sys.stderr)
         return 2
@@ -505,6 +559,12 @@ def main(argv=None):
     elif command == 'pending' and len(rest) == 2:
         matrix = load_matrix(rest[0])
         _runs_to_tsv(pending(matrix, read_index(os.path.join(rest[1], 'index.csv')), rest[1]))
+    elif command == 'nav-args' and len(rest) == 1:
+        try:
+            print(' '.join(nav_args(rest[0])))
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 2
     elif command == 'valid' and len(rest) == 1:
         print('1' if parse_bundle(rest[0])['valid'] else '0')
     elif command == 'append' and len(rest) == 9:

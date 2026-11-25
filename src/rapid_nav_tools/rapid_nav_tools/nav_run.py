@@ -1,18 +1,20 @@
 """
 Run the goals of a scenario through the navigation stack and score them against ground truth.
 
-Start the navigation stack first (ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+Start the navigation stack first (ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation
 controller:=<name>), then run:
 
     ros2 run rapid_nav_tools nav_run --scenario tour|unmapped|crossing|head_on|crowd
                                      [--controller dwa|dwb|rpp]
+                                     [--hazards off|oracle|oracle_static|flow|fused]
+                                     [--scan-filter]
                                      [--out DIR] [--profile native|docker] [--goal-timeout S]
 
 The scenario's goals (rapid_nav_navigation/config/nav_scenarios.yaml) go to /navigate_to_pose one
 after another. Every goal is scored from the simulator's ground truth: success (within 0.25 m and
 0.35 rad of the goal), the time in simulated seconds, the travelled length, the mean tracking error
 to the last plan, the minimum body clearance and the collision episodes against the map's occupied
-cells and the scenario's boxes, the recoveries, and how far the wheel odometry and AMCL drifted.
+cells and the scenario's boxes, the recoveries, and how far the wheel odometry and SLAM drifted.
 Nav2's own verdict is recorded beside the ground truth, and every disagreement is counted.
 
 A scenario with moving obstacles (crossing, head_on, crowd) needs sim.launch.py with
@@ -20,9 +22,18 @@ scenario:=<name>. nav_run then also records the obstacles' true tracks, scores t
 them at the same simulated time, and judges whether the scenario played out as scripted (the
 validity rows). The navigation rows of a dynamic scenario are information for every controller.
 
+The navigation stack builds its map with SLAM. nav_run first checks that the SLAM map frame is
+the arena frame (the robot's map pose against the ground truth), records the robot's map-frame
+pose, scores the SLAM trajectory against the ground truth, and at the end scores the final SLAM
+map against the arena map and the spawned boxes (map_quality.py): precision, recall and the ghost
+cells, with those left by the moving obstacles counted apart. --scan-filter records that the
+launch ran with scan_filter:=true. The map is saved as slam_map.pgm and
+slam_map.yaml and drawn in slam_map_<scenario>.png.
+
 The bundle in DIR holds environment.txt, results.json, summary.md and trajectories_<scenario>.png.
 The exit status is 0 when every check of dwa passes (the rows of dwb and rpp are information)
-and every validity row passes, else 1; 2 when a dynamic scenario has no obstacle driver.
+and every validity row passes, else 1; 2 when a dynamic scenario has no obstacle driver, or with
+SLAM when there is no map or the map frame is not the arena frame.
 """
 
 import argparse
@@ -36,9 +47,11 @@ import time
 
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 import numpy as np
 from PIL import Image, ImageDraw
 from rapid_nav_tools.checks import (
@@ -53,6 +66,8 @@ from rapid_nav_tools.checks import (
     travelled_length,
     yaw_from_quaternion,
 )
+from rapid_nav_tools.experiments import condition_word
+from rapid_nav_tools.map_quality import evaluate as evaluate_map, trajectory_error
 from rapid_nav_tools.scenarios import (
     obstacle_topics,
     SHAPES,
@@ -66,8 +81,10 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
 from std_msgs.msg import Bool, Int32
+from tf2_ros import Buffer, TransformException, TransformListener
 import yaml
 
 SCENARIOS = ('tour', 'unmapped', 'crossing', 'head_on', 'crowd')
@@ -92,6 +109,9 @@ MAP_NAME = 'arena'
 PICTURE_PX_PER_M = 60
 PICTURE_MARGIN_PX = 40
 PICTURE_MAX_SPEED = 0.5
+MAP_WAIT_S = 120.0
+FRAME_CHECK_M = 0.3
+FRAME_CHECK_RAD = 0.2
 
 
 def stamp_now():
@@ -152,8 +172,8 @@ def drift(start_truth, end_truth, start_sensor, end_sensor):
     Return how far a sensor's motion over the goal differs from the ground truth's motion.
 
     Wheel odometry starts from its own origin, so its drift is the difference between the motion
-    the odometry reports and the motion of the truth since the goal began. Without a start (AMCL,
-    which is in the map frame) it is the distance of the sensor from the truth at the end.
+    the odometry reports and the motion of the truth since the goal began. Without a start (a pose
+    in the map frame) it is the distance of the sensor from the truth at the end.
     """
     if end_sensor is None or end_truth is None:
         return None
@@ -240,7 +260,7 @@ def score_goal(index, goal, samples, plan_history, timing, outcome, occupied, bo
     success_nav2 = outcome['status'] == GoalStatus.STATUS_SUCCEEDED
     odom = [s['odom'] for s in samples if s['odom'] is not None]
     filtered = [s['filtered'] for s in samples if s['filtered'] is not None]
-    amcl = [s['amcl'] for s in samples if s['amcl'] is not None]
+    slam = [s['map_pose'] for s in samples if s.get('map_pose') is not None]
     min_clearance = float(np.min(clearances)) if clearances.size else None
     return {
         'goal': index,
@@ -276,7 +296,7 @@ def score_goal(index, goal, samples, plan_history, timing, outcome, occupied, bo
         'filtered_drift_m': drift(start_truth, end_truth,
                                   filtered[0] if filtered else None,
                                   filtered[-1] if filtered else None),
-        'amcl_error_m': drift(None, end_truth, None, amcl[-1] if amcl else None),
+        'slam_error_m': drift(None, end_truth, None, slam[-1] if slam else None),
         'samples': len(samples),
     }
 
@@ -290,7 +310,7 @@ class NavRun(Node):
             'nav_run',
             parameter_overrides=[Parameter('use_sim_time', Parameter.Type.BOOL, True)],
         )
-        self.latest = {'truth': None, 'odom': None, 'filtered': None, 'amcl': None, 'cmd': None}
+        self.latest = {'truth': None, 'odom': None, 'filtered': None, 'cmd': None}
         self.plan = None
         self.plan_history = []
         self.clock_seen = False
@@ -308,8 +328,6 @@ class NavRun(Node):
         self.create_subscription(Odometry, '/odom', self._on_odometry('odom'), sensor_qos)
         self.create_subscription(Odometry, '/odometry/filtered', self._on_odometry('filtered'),
                                  sensor_qos)
-        self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl,
-                                 sensor_qos)
         self.create_subscription(Twist, '/cmd_vel', self._on_cmd, 10)
         self.create_subscription(Path, '/plan', self._on_plan, 10)
         self.client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
@@ -317,6 +335,48 @@ class NavRun(Node):
         self.ready = False
         self.create_subscription(Bool, '/scenario/ready', self._on_ready, LATCHED)
         self.obstacle_samples = {}
+        self.tf_buffer = None
+        self.slam_map = None
+
+    def enable_slam(self):
+        """Listen to TF (the map-frame pose) and keep the latest SLAM map."""
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.create_subscription(OccupancyGrid, '/map', self._on_map, LATCHED)
+
+    def _on_map(self, message):
+        """Keep the latest map as (grid rows = y, origin, resolution, stamp)."""
+        info = message.info
+        grid = np.asarray(message.data, dtype=np.int16).reshape(info.height, info.width)
+        self.slam_map = {'grid': grid, 'origin': (info.origin.position.x, info.origin.position.y),
+                         'resolution': float(info.resolution), 't': self.sim_now()}
+
+    def is_active(self, node_name):
+        """Return whether a lifecycle node reports active (False when it does not answer)."""
+        client = self.create_client(GetState, '/{}/get_state'.format(node_name))
+        try:
+            if not client.wait_for_service(timeout_sec=1.0):
+                return False
+            future = client.call_async(GetState.Request())
+            end = time.monotonic() + 2.0
+            while not future.done() and time.monotonic() < end:
+                rclpy.spin_once(self, timeout_sec=0.05)
+            return bool(future.done() and future.result() is not None
+                        and future.result().current_state.id == State.PRIMARY_STATE_ACTIVE)
+        finally:
+            self.destroy_client(client)
+
+    def map_pose(self):
+        """Return the latest (x, y, yaw) of base_footprint in map from TF, or None."""
+        if self.tf_buffer is None:
+            return None
+        try:
+            t = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
+        except TransformException:
+            return None
+        q = t.transform.rotation
+        return (t.transform.translation.x, t.transform.translation.y,
+                yaw_from_quaternion(q.x, q.y, q.z, q.w))
 
     def _on_ready(self, message):
         """Note that the obstacle driver has spawned every obstacle."""
@@ -364,14 +424,6 @@ class NavRun(Node):
                                                     orientation.z, orientation.w))
         return keep
 
-    def _on_amcl(self, message):
-        """Keep the AMCL pose as (x, y, yaw)."""
-        pose = message.pose.pose
-        orientation = pose.orientation
-        self.latest['amcl'] = (pose.position.x, pose.position.y,
-                               yaw_from_quaternion(orientation.x, orientation.y,
-                                                   orientation.z, orientation.w))
-
     def _on_cmd(self, message):
         """Keep the latest command as (linear, angular)."""
         self.latest['cmd'] = (message.linear.x, message.angular.z)
@@ -403,9 +455,12 @@ class NavRun(Node):
 
     def sample(self):
         """Return the latest values of every topic, with the simulated time."""
-        return {'t': self.sim_now(), 'truth': self.latest['truth'], 'odom': self.latest['odom'],
-                'filtered': self.latest['filtered'], 'amcl': self.latest['amcl'],
-                'cmd': self.latest['cmd']}
+        out = {'t': self.sim_now(), 'truth': self.latest['truth'], 'odom': self.latest['odom'],
+               'filtered': self.latest['filtered'],
+               'cmd': self.latest['cmd']}
+        if self.tf_buffer is not None:
+            out['map_pose'] = self.map_pose()
+        return out
 
 
 def make_goal(goal):
@@ -501,13 +556,16 @@ def spawn_boxes(boxes, size, log_path):
     return extra
 
 
-def write_environment(out_dir, argv, scenario, controller, profile, goal_timeout, hazards='off'):
+def write_environment(out_dir, argv, scenario, controller, profile, goal_timeout, hazards='off',
+                      scan_filter=False):
     """Write environment.txt: the host, the commands and the scenario."""
     lines = environment_lines(argv)
     lines += [
         'scenario: ' + scenario,
         'controller: {} (recorded only: the launch chose it)'.format(controller),
         'hazards: {} (recorded only: the launch chose it)'.format(hazards),
+        'scan filter: {} (recorded only: the launch chose it)'.format(
+            'on' if scan_filter else 'off'),
         'profile: ' + profile,
         'goal timeout (sim s): {}'.format(goal_timeout),
         'robot radius (m): {}'.format(ROBOT_RADIUS_M),
@@ -556,10 +614,41 @@ def build_checks(controller, goals, dynamic=False):
     ]
 
 
-def summary_text(scenario, controller, checks, goals, validity=(), hazards='off', rtf=None):
+def slam_lines(slam):
+    """Return the SLAM section of summary.md: the trajectory error and the map quality."""
+    trajectory = slam['trajectory']
+    lines = ['## SLAM', '', 'scan filter: {}'.format('on' if slam['scan_filter'] else 'off'), '',
+             '| trajectory (map frame against ground truth) | value |', '|---|---|',
+             '| samples | {} |'.format(trajectory['samples']),
+             '| ATE RMSE (m) | {} |'.format(fmt(trajectory['ate_rmse_m'])),
+             '| max error (m) | {} |'.format(fmt(trajectory['max_m'])),
+             '| final error (m) | {} |'.format(fmt(trajectory['final_m'])),
+             '| mean yaw error (rad) | {} |'.format(fmt(trajectory['mean_yaw_rad'])), '']
+    quality = slam.get('map_quality')
+    if not quality:
+        lines += ['No SLAM map was received.', '']
+        return lines
+    a = quality['alignment']
+    lines += ['Final map against the arena map (tolerance {} m); "aligned" after the best rigid '
+              'motion within 0.20 m and 3 deg: dx {:.2f} m, dy {:.2f} m, dyaw {:.1f} deg.'.format(
+                  slam['tolerance_m'], a['dx_m'], a['dy_m'], math.degrees(a['dyaw_rad'])), '',
+              '| map | precision | recall | F1 | occupied cells | ghost cells | '
+              'mover ghost cells | mover ghost area (m2) |', '|---|---|---|---|---|---|---|---|']
+    for name in ('identity', 'aligned'):
+        q = quality[name]
+        lines.append('| {} | {} | {} | {} | {} | {} | {} | {} |'.format(
+            name, fmt(q['precision']), fmt(q['recall']), fmt(q['f1']), q['slam_occupied'],
+            q['ghost_cells'], q['mover_ghost_cells'], fmt(q['mover_ghost_area_m2'])))
+    return lines + ['']
+
+
+def summary_text(scenario, controller, checks, goals, validity=(), hazards='off', rtf=None,
+                 slam=None):
     """Return summary.md: the validity table, the check table and the per-goal table."""
     lines = ['# nav_run: {} with {}'.format(scenario, controller), '',
              'hazards: {}'.format(hazards)]
+    if slam is not None:
+        lines.append('scan filter: {}'.format('on' if slam['scan_filter'] else 'off'))
     if rtf is not None:
         lines.append('real-time factor (measured): {:.2f}'.format(rtf))
     lines.append('')
@@ -577,7 +666,7 @@ def summary_text(scenario, controller, checks, goals, validity=(), hazards='off'
     dynamic = bool(validity)
     header = ('| goal | target (x, y, yaw) | Nav2 | truth | error (m, rad) | time (s) | '
               'travelled (m) | tracking, plan in force (m) | min clearance (m) | collisions | '
-              'recoveries | odom drift (m) | AMCL error (m) |')
+              'recoveries | odom drift (m) | SLAM error, end (m) |')
     columns = 13
     if dynamic:
         header += (' min static (m) | min dynamic (m) | closest approach (m) | '
@@ -595,12 +684,14 @@ def summary_text(scenario, controller, checks, goals, validity=(), hazards='off'
                    fmt(g['time_s'], 1), fmt(g['travelled_m'], 2),
                    fmt(g['tracking_error_m'], 3), fmt(g['min_clearance_m'], 3),
                    g['collision_episodes'], g['recoveries'], fmt(g['odom_drift_m']),
-                   fmt(g['amcl_error_m'])))
+                   fmt(g['slam_error_m'])))
         if dynamic:
             row += ' {} | {} | {} | {} |'.format(
                 fmt(g['min_clearance_static_m']), fmt(g['min_clearance_dynamic_m']),
                 fmt(g['closest_approach_m']), g['close_encounters'])
         lines.append(row)
+    if slam is not None:
+        lines += [''] + slam_lines(slam)
     return '\n'.join(lines) + '\n'
 
 
@@ -693,6 +784,122 @@ def draw_picture(path, scenario, goals, samples_per_goal, plans_per_goal, occupi
     image.save(path)
 
 
+def check_slam_frame(node):
+    """
+    Return why the SLAM map frame cannot be used for the scenario's goals, or '' when it can.
+
+    Waits for the first map, then compares the robot's map-frame pose with the ground truth: the
+    goals and the scoring are in the arena frame, which is SLAM's map frame only for the default
+    spawn.
+    """
+    if not node.wait_until(lambda: node.slam_map is not None, MAP_WAIT_S):
+        return 'no /map from SLAM within {} s'.format(MAP_WAIT_S)
+    if not node.wait_until(lambda: node.map_pose() is not None, CLOCK_WAIT_S):
+        return 'no map -> base_footprint transform within {} s'.format(CLOCK_WAIT_S)
+    pose, truth = node.map_pose(), node.latest['truth']
+    distance = math.hypot(pose[0] - truth[0], pose[1] - truth[1])
+    yaw = abs(angle_diff(pose[2], truth[2]))
+    if distance > FRAME_CHECK_M or yaw > FRAME_CHECK_RAD:
+        return ('map frame not aligned with the arena frame: the robot is at ({:.2f}, {:.2f}, '
+                '{:.2f}) in map and at ({:.2f}, {:.2f}, {:.2f}) in truth; the navigation stack '
+                'needs the default spawn'.format(*pose, *truth))
+    return ''
+
+
+def obstacle_radius(shape):
+    """Return the radius of a circle that covers a named obstacle shape."""
+    spec = SHAPES[shape]
+    if spec['kind'] == 'cylinder':
+        return spec['radius']
+    return math.hypot(spec['size'][0], spec['size'][1]) / 2.0
+
+
+def write_slam_map(out_dir, slam_map):
+    """Write slam_map.pgm (trinary, first row at the top) and slam_map.yaml."""
+    grid = slam_map['grid']
+    pixels = np.full(grid.shape, 205, dtype=np.uint8)
+    pixels[(grid >= 0) & (grid < 25)] = 254
+    pixels[grid >= 65] = 0
+    Image.fromarray(np.flipud(pixels)).save(os.path.join(out_dir, 'slam_map.pgm'))
+    meta = {'image': 'slam_map.pgm', 'mode': 'trinary', 'resolution': slam_map['resolution'],
+            'origin': [float(slam_map['origin'][0]), float(slam_map['origin'][1]), 0.0],
+            'negate': 0, 'occupied_thresh': 0.65, 'free_thresh': 0.25}
+    with open(os.path.join(out_dir, 'slam_map.yaml'), 'w', encoding='utf-8') as handle:
+        yaml.safe_dump(meta, handle)
+
+
+def draw_slam_map(path, slam_map, truth_grid, truth_origin, quality, tracks):
+    """Draw the truth (grey) and the SLAM map: matched green, ghosts red, mover ghosts magenta."""
+    from rapid_nav_tools.map_quality import dilate, mover_mask, resample
+    a = quality['alignment']
+    on_truth = resample(slam_map['grid'], slam_map['origin'], slam_map['resolution'],
+                        truth_grid.shape, truth_origin, CELL_M, a['dx_m'], a['dy_m'],
+                        a['dyaw_rad'])
+    true_occ = truth_grid >= 65
+    slam_occ = on_truth >= 65
+    near = dilate(true_occ, 2)
+    movers = mover_mask(truth_grid.shape, truth_origin, CELL_M, tracks)
+    rgb = np.full(truth_grid.shape + (3,), 250, dtype=np.uint8)
+    rgb[(on_truth >= 0) & (on_truth < 25)] = (225, 235, 250)
+    rgb[true_occ] = (150, 150, 150)
+    rgb[slam_occ & near] = (30, 150, 60)
+    rgb[slam_occ & ~near] = (220, 40, 40)
+    rgb[slam_occ & ~near & movers] = (200, 0, 200)
+    image = Image.fromarray(np.flipud(rgb)).resize(
+        (truth_grid.shape[1] * 3, truth_grid.shape[0] * 3), Image.NEAREST)
+    draw = ImageDraw.Draw(image)
+    height = truth_grid.shape[0]
+    for track in tracks:
+        points = [((x - truth_origin[0]) / CELL_M * 3,
+                   (height - (y - truth_origin[1]) / CELL_M) * 3)
+                  for x, y in track['xy']]
+        if len(points) >= 2:
+            draw.line(points, fill=(90, 90, 90), width=1)
+    draw.text((6, 4), 'SLAM map: green matched, red ghost, magenta mover ghost, grey truth',
+              fill=(0, 0, 0))
+    image.save(path)
+
+
+def with_boxes(grid, origin, boxes):
+    """Return a copy of the truth grid with the spawned boxes (x, y, half size) occupied."""
+    out = np.array(grid, dtype=np.int16, copy=True)
+    for bx, by, half in boxes:
+        i0 = max(0, int(math.floor((bx - half - origin[0]) / CELL_M)))
+        i1 = min(out.shape[1], int(math.ceil((bx + half - origin[0]) / CELL_M)))
+        j0 = max(0, int(math.floor((by - half - origin[1]) / CELL_M)))
+        j1 = min(out.shape[0], int(math.ceil((by + half - origin[1]) / CELL_M)))
+        out[j0:j1, i0:i1] = 100
+    return out
+
+
+def slam_results(out_dir, scenario, scan_filter, samples_per_goal, slam_map, truth_grid,
+                 truth_origin, obstacles, final_tracks, boxes=()):
+    """Return the SLAM block of results.json; write the map files and the map picture."""
+    truth_grid = with_boxes(truth_grid, truth_origin, boxes)
+    samples = [s for goal in samples_per_goal for s in goal]
+    out = {'scan_filter': bool(scan_filter), 'tolerance_m': 0.10,
+           'trajectory': trajectory_error([s['truth'] for s in samples],
+                                          [s.get('map_pose') for s in samples]),
+           'map_quality': None}
+    if slam_map is None:
+        return out
+    write_slam_map(out_dir, slam_map)
+    shapes = {o['name']: o['shape'] for o in obstacles}
+    tracks = [{'xy': t['xy'], 'radius': obstacle_radius(shapes[t['name']])}
+              for t in final_tracks if len(t['xy']) >= 1]
+    quality = evaluate_map(slam_map['grid'], slam_map['origin'], slam_map['resolution'],
+                           truth_grid, truth_origin, CELL_M, tracks, tol=out['tolerance_m'])
+    out['map_quality'] = quality
+    out['map'] = {'width': int(slam_map['grid'].shape[1]),
+                  'height': int(slam_map['grid'].shape[0]),
+                  'origin': [float(slam_map['origin'][0]), float(slam_map['origin'][1])],
+                  'resolution': slam_map['resolution'], 'received_t': slam_map['t'],
+                  'file': 'slam_map.yaml'}
+    draw_slam_map(os.path.join(out_dir, 'slam_map_{}.png'.format(scenario)), slam_map,
+                  truth_grid, truth_origin, quality, tracks)
+    return out
+
+
 def parse_arguments(argv):
     """Return the command-line arguments."""
     parser = argparse.ArgumentParser(description='Run a scenario and score it on ground truth.')
@@ -701,34 +908,43 @@ def parse_arguments(argv):
                         help='recorded in the bundle; the launch chose the controller')
     parser.add_argument('--hazards', default='off', choices=HAZARDS,
                         help='recorded in the bundle; the launch chose the hazard source')
+    parser.add_argument('--scan-filter', action='store_true',
+                        help='recorded in the bundle: the launch ran with scan_filter:=true')
     parser.add_argument('--out', default=None,
                         help='bundle folder (default nav_run_<scenario>_<controller>[_<hazards>]'
                              '_<time>)')
     parser.add_argument('--profile', default='native', choices=('native', 'docker'))
     parser.add_argument('--goal-timeout', type=float, default=120.0,
                         help='simulated seconds allowed per goal')
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.scan_filter and args.hazards != 'fused':
+        parser.error('--scan-filter needs --hazards fused')
+    return args
 
 
 def main(argv=None):
     """Run the scenario, write the bundle and print the summary; return the exit status."""
     argv_list = list(sys.argv if argv is None else argv)
     args = parse_arguments(argv_list[1:])
-    tag = '' if args.hazards == 'off' else '_' + args.hazards
+    word = condition_word(args.hazards, args.scan_filter)
+    tag = '' if word == 'off' else '_' + word
     out_dir = args.out or 'nav_run_{}_{}{}_{}'.format(
         args.scenario, args.controller, tag, stamp_now())
     os.makedirs(out_dir, exist_ok=True)
     write_environment(out_dir, argv_list, args.scenario, args.controller, args.profile,
-                      args.goal_timeout, args.hazards)
+                      args.goal_timeout, args.hazards, args.scan_filter)
 
     scenario = load_scenario(args.scenario)
     validate_scenario(args.scenario, scenario)
     obstacles = scenario.get('obstacles') or []
-    occupied, _, grid = load_map()
+    occupied, meta, grid = load_map()
+    truth_origin = (float(meta['origin'][0]), float(meta['origin'][1]))
     box_size = float(scenario.get('box_size', 0.0))
     boxes = []
     rclpy.init()
     node = NavRun()
+    node.enable_slam()
+    slam_map = None
     try:
         if not node.wait_until(lambda: node.clock_seen, CLOCK_WAIT_S):
             raise RuntimeError('no /clock within {} s'.format(CLOCK_WAIT_S))
@@ -738,6 +954,13 @@ def main(argv=None):
         if not node.client.wait_for_server(timeout_sec=SERVER_WAIT_S):
             raise RuntimeError('/navigate_to_pose is not available within {} s'.format(
                 SERVER_WAIT_S))
+        # The action server exists from configuration on, but rejects goals until it is active.
+        if not node.wait_until(lambda: node.is_active('bt_navigator'), SERVER_WAIT_S):
+            raise RuntimeError('bt_navigator is not active within {} s'.format(SERVER_WAIT_S))
+        problem = check_slam_frame(node)
+        if problem:
+            print(problem, file=sys.stderr)
+            return 2
         if obstacles:
             node.record_obstacles([o['name'] for o in obstacles])
             if not node.wait_until(lambda: node.ready, READY_WAIT_S):
@@ -757,6 +980,8 @@ def main(argv=None):
             tracks_so_far = obstacle_tracks(obstacles, node.obstacle_samples)
             scored = score_goal(index, goal, samples, node.plan_history, timing, outcome,
                                 occupied, boxes, tracks_so_far)
+            scored['slam_error'] = trajectory_error(
+                [s['truth'] for s in samples], [s.get('map_pose') for s in samples])
             plans.append([plan for _, plan in node.plan_history])
             goals.append(scored)
             samples_per_goal.append(samples)
@@ -766,6 +991,7 @@ def main(argv=None):
                 flush=True)
     finally:
         node_samples = {name: list(rows) for name, rows in node.obstacle_samples.items()}
+        slam_map = node.slam_map
         node.destroy_node()
         rclpy.shutdown()
 
@@ -787,10 +1013,13 @@ def main(argv=None):
     if rtf is not None:
         with open(os.path.join(out_dir, 'environment.txt'), 'a', encoding='utf-8') as handle:
             handle.write('real-time factor (measured): {:.2f}\n'.format(rtf))
+    slam = slam_results(out_dir, args.scenario, args.scan_filter, samples_per_goal, slam_map,
+                        grid, truth_origin, obstacles, final_tracks, boxes)
     results = {
         'scenario': args.scenario,
         'controller': args.controller,
         'hazards': args.hazards,
+        'scan_filter': bool(args.scan_filter),
         'rtf': rtf,
         'profile': args.profile,
         'goal_timeout_s': args.goal_timeout,
@@ -801,10 +1030,11 @@ def main(argv=None):
         'goals': goals,
         'samples': samples_per_goal,
     }
+    results['slam'] = slam
     with open(os.path.join(out_dir, 'results.json'), 'w', encoding='utf-8') as handle:
         json.dump(results, handle, indent=1)
     summary = summary_text(args.scenario, args.controller, checks, goals, validity, args.hazards,
-                           rtf)
+                           rtf, slam)
     with open(os.path.join(out_dir, 'summary.md'), 'w', encoding='utf-8') as handle:
         handle.write(summary)
     draw_picture(os.path.join(out_dir, 'trajectories_{}.png'.format(args.scenario)),

@@ -18,6 +18,7 @@ from rapid_nav_tools.scenarios import (
     spawn_height,
     StartTrigger,
     validate_scenario,
+    yield_factor,
 )
 import rclpy
 from rclpy.node import Node
@@ -54,6 +55,10 @@ class ObstacleDriver(Node):
         """Declare the scenario parameter; the rest is set up once the obstacles exist."""
         super().__init__('obstacle_driver')
         self.declare_parameter('scenario', '')
+        # The demo's walkers make way for the robot (scenarios.yield_factor); the experiments'
+        # walkers keep to their script (0: off).
+        self.declare_parameter('yield_stop_m', 0.0)
+        self.declare_parameter('yield_slow_m', 1.8)
 
     def setup(self, scenario_name, obstacles):
         """Create the publishers, subscribers and timers for the given obstacles."""
@@ -116,6 +121,11 @@ class ObstacleDriver(Node):
                     # The follower gives the world velocity (heading 0); the full orientation
                     # turns it into the body frame and levels the body.
                     wx, wy, _ = follower.step(pose[0], pose[1], 0.0)
+                    stop = float(self.get_parameter('yield_stop_m').value)
+                    if stop > 0.0:
+                        share = yield_factor(pose[:2], (wx, wy), self.robot_xy, stop,
+                                             float(self.get_parameter('yield_slow_m').value))
+                        wx, wy = wx * share, wy * share
                     command = body_command(wx, wy, pose[2], pose[3], pose[4])
                     cmd.linear.x, cmd.linear.y, cmd.linear.z = command[:3]
                     cmd.angular.x, cmd.angular.y, cmd.angular.z = command[3:]

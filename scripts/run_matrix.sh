@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run an experiment matrix: every run in a fresh simulation (one Docker container each), resumable.
 #
-#   scripts/run_matrix.sh <matrix.yaml | pilot | m1 | m2>
+#   scripts/run_matrix.sh <matrix.yaml | m4>
 #
 # The runs come from `rapid_nav_tools.experiments` (repeats outer, cells shuffled with the seed).
 # Finished runs are listed in experiments/<name>/index.csv; a restart skips the ones with exit 0 and
@@ -17,7 +17,7 @@ MIN_FREE_KB="$(awk -v g="$MIN_FREE_GIB" 'BEGIN { printf "%d", g * 1024 * 1024 }'
 POLL_S=5
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: scripts/run_matrix.sh <matrix.yaml | pilot | m1 | m2>" >&2
+    echo "usage: scripts/run_matrix.sh <matrix.yaml | m4>" >&2
     exit 2
 fi
 matrix="$1"
@@ -64,7 +64,15 @@ attempt() {
         cmd=(scripts/dev.sh track-smoke "$scenario" --rtf "$rtf")
         prefix="track_check_${scenario}_"
     else
-        cmd=(scripts/dev.sh nav-smoke "$scenario" "$controller" "$hazards" --rtf "$rtf")
+        # the matrix word may name a SLAM condition: helper nav-args turns it into arguments
+        local -a condition
+        read -r -a condition <<< "$(helper nav-args "$hazards")" || true
+        if [ "${#condition[@]}" -eq 0 ]; then
+            echo "unknown condition $hazards" >&2
+            exit_code="usage"; wall_s=0; bundle=""
+            return
+        fi
+        cmd=(scripts/dev.sh nav-smoke "$scenario" "$controller" "${condition[@]}" --rtf "$rtf")
         [ "$hazards" = "off" ] || tag="_$hazards"
         prefix="nav_run_${scenario}_${controller}${tag}_"
     fi

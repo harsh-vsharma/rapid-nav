@@ -2,20 +2,48 @@
 
 import json
 import os
+import tempfile
 
+import pytest
 from rapid_nav_tools import experiments as ex
 
 CONFIG = os.path.join(os.path.dirname(__file__), '..', 'config', 'experiments')
 
+# Matrices of different shapes for the expansion and resume logic (not shipped).
+FIXTURES = {
+    'pilot': 'name: pilot\nrtf: 1.0\nscenarios: [crossing]\ncontrollers: [dwb]\n'
+             'hazards: ["off", oracle]\nrepeats: 2\nseed: 7\n',
+    'm1': 'name: m1\nrtf: 1.0\nscenarios: [crossing, head_on, crowd]\n'
+          'controllers: [dwa, dwb, rpp]\nhazards: ["off", oracle_static, oracle]\nrepeats: 5\n'
+          'seed: 7\n',
+    'm2': 'name: m2\nrtf: 0.25\nscenarios: [crossing, head_on, crowd]\ncontrollers: [dwb]\n'
+          'hazards: ["off", oracle, flow]\nrepeats: 5\nseed: 7\ntrack_check: true\n',
+}
+
+
+def fixture_path(name):
+    """Return the path of a fixture matrix, written once to a temporary folder."""
+    folder = os.path.join(tempfile.gettempdir(),
+                          'rapid_nav_matrix_fixtures_{}'.format(os.getpid()))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, name + '.yaml')
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(FIXTURES[name])
+    return path
+
 
 def matrix(name):
+    """Return a fixture matrix, or a shipped one (m4)."""
+    if name in FIXTURES:
+        return ex.load_matrix(fixture_path(name))
     return ex.load_matrix(os.path.join(CONFIG, name + '.yaml'))
 
 
-def test_counts_of_the_shipped_matrices():
+def test_counts_of_the_matrices():
     assert len(ex.expand(matrix('m1'))) == 135
     assert len(ex.expand(matrix('m2'))) == 45
     assert len(ex.expand(matrix('pilot'))) == 4
+    assert len(ex.expand(matrix('m4'))) == 27
 
 
 def test_repeats_are_the_outer_loop_and_each_cell_once_per_repeat():
@@ -87,7 +115,7 @@ def test_a_good_row_whose_bundle_is_gone_is_pending(tmp_path):
 
 
 def test_command_line_append_and_pending(tmp_path, capsys):
-    path = os.path.join(CONFIG, 'pilot.yaml')
+    path = fixture_path('pilot')
     index = str(tmp_path / 'index.csv')
     assert ex.main(['append', index, 'crossing', 'dwb', 'off', '1', 'b1', '0', '115', '1']) == 0
     (tmp_path / 'b1').mkdir()
@@ -227,3 +255,56 @@ def test_tables_are_markdown():
     header, rows = ex.cell_table_rows(cells)
     text = ex.markdown_table(header, rows)
     assert text.startswith('| scenario') and '1.00 [0.34, 1.00]' in text
+
+
+def test_condition_words_map_to_hazards_and_filter():
+    assert ex.condition('off') == ('off', False)
+    assert ex.condition('fused') == ('fused', False)
+    assert ex.condition('fused_filter') == ('fused', True)
+    for bad in ('radar', 'flow_filter', 'slam_fused', 'off_filter'):
+        with pytest.raises(ValueError):
+            ex.condition(bad)
+
+
+def test_condition_word_is_the_inverse():
+    for word in ('off', 'oracle', 'oracle_static', 'flow', 'fused', 'fused_filter'):
+        assert ex.condition_word(*ex.condition(word)) == word
+    with pytest.raises(ValueError):
+        ex.condition_word('flow', True)
+
+
+def test_nav_args_of_the_conditions():
+    assert ex.nav_args('fused') == ['fused']
+    assert ex.nav_args('off') == ['off']
+    assert ex.nav_args('fused_filter') == ['fused', '--scan-filter']
+
+
+def test_m4_matrix_loads_and_expands_to_27_runs():
+    m = matrix('m4')
+    assert m['hazards'] == ['off', 'fused', 'fused_filter']
+    assert len(ex.expand(m)) == 27 and m['rtf'] == 0.25
+    assert ('fused_filter', 'fused') in ex.DEFAULT_COMPARISONS
+
+
+def test_load_matrix_rejects_an_unknown_condition(tmp_path):
+    path = tmp_path / 'bad.yaml'
+    path.write_text('name: bad\nscenarios: [crossing]\ncontrollers: [dwb]\n'
+                    'hazards: [radar]\nrepeats: 1\n')
+    with pytest.raises(ValueError):
+        ex.load_matrix(str(path))
+
+
+def test_parse_bundle_reads_the_slam_fields(tmp_path):
+    goal = {'truth_success': True, 'collision_episodes': 0, 'min_clearance_dynamic_m': 0.2,
+            'closest_approach_m': 0.6, 'time_s': 10.0}
+    data = {'goals': [goal], 'validity': [], 'rtf': 0.25,
+            'slam': {'trajectory': {'ate_rmse_m': 0.04},
+                     'map_quality': {'aligned': {'precision': 0.9, 'recall': 0.8, 'f1': 0.85,
+                                                 'ghost_cells': 12, 'mover_ghost_cells': 7}}}}
+    (tmp_path / 'results.json').write_text(json.dumps(data))
+    out = ex.parse_bundle(str(tmp_path))
+    assert out['valid'] and out['slam_ate_m'] == 0.04
+    assert out['map_precision'] == 0.9 and out['mover_ghost_cells'] == 7
+    del data['slam']
+    (tmp_path / 'results.json').write_text(json.dumps(data))
+    assert ex.parse_bundle(str(tmp_path))['map_precision'] is None

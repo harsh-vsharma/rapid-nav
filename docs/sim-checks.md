@@ -125,7 +125,7 @@ every terminal.
 planning layout (map, particle cloud, costmap, scan and one path per planner):
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py planning:=true
+ros2 launch rapid_nav_bringup sim.launch.py stack:=planning
 ```
 
 **b. Localisation in RViz.** Wait about 20 seconds. The particle cloud (the small arrows) should collapse onto the robot
@@ -174,11 +174,12 @@ Docker image). Build as in step 1, and `source install/setup.bash` in every term
 **a. Start the navigation stack.** The default controller is ours (`dwa`); the other two are `dwb` and `rpp`:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation
 ```
 
-RViz opens with the navigation layout (map, particle cloud, the global costmap, scan, the planned paths, and `/plan` in
-cyan and `/local_plan` in green). Wait about 20 seconds for AMCL to settle: the particle cloud collapses onto the robot. In a
+RViz opens with the navigation layout (the map, the global costmap, scan, the planned paths, and `/plan` in cyan and
+`/local_plan` in green). The map starts nearly empty and grows as SLAM sees more of the arena; wait until it shows the
+walls around the robot (about 10 seconds). In a
 second terminal, `ros2 lifecycle get /bt_navigator` should print `active`.
 
 **b. Three goals in RViz.** Use the "2D Goal Pose" tool to click three goals in open floor, one at a time, and let each
@@ -198,9 +199,9 @@ It writes a `nav_run_tour_dwa_<time>/` folder with `summary.md`, `results.json`,
 start it again with the other controllers, and run each one the same way:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwb
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation controller:=dwb
 ros2 run rapid_nav_tools nav_run --scenario tour --controller dwb
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=rpp
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation controller:=rpp
 ros2 run rapid_nav_tools nav_run --scenario tour --controller rpp
 ```
 
@@ -208,7 +209,7 @@ Last, the `unmapped` scenario (two boxes that are not in the map) with our contr
 the boxes stay in the world:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true controller:=dwa
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation controller:=dwa
 ros2 run rapid_nav_tools nav_run --scenario unmapped --controller dwa
 ```
 
@@ -234,7 +235,7 @@ stay in the world).
 **a. See the obstacles.** Start the navigation stack with the `crossing` scenario:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing
 ```
 
 In Gazebo an orange cylinder (the walker) stands at (1.5, -2.0) and does not move yet. In RViz the display "Moving
@@ -273,7 +274,7 @@ S1 robot as well. About 15 minutes.
 2. **Farnebäck, with the simulation running:**
 
    ```bash
-   ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
+   ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=farneback
    ```
 
    The terminal prints a line `flow_node: backend=farneback device=cpu size=640x480 torch=...`. In RViz the image
@@ -291,7 +292,7 @@ S1 robot as well. About 15 minutes.
    **Do not touch the robot or the keyboard during this.** It prints a table and writes a
    `perception_check_<time>/` folder. Keep the terminal output.
 5. **PyTorch, if installed:** stop the simulation (Ctrl+C), then start it again with RAFT and repeat steps 2 to 4 with
-   `flow_backend:=raft_small` (and `flow_device:=cuda` if the machine has an NVIDIA GPU). The startup line must say
+   `flow_backend:=raft_small` (an NVIDIA GPU is used automatically when present). The startup line must say
    `backend=raft_small`. Keep the second folder and its terminal output.
 
    If PyTorch is not installed, skip this step and say so when you send the files back.
@@ -306,7 +307,7 @@ needs the install of step 11. Stop any earlier simulation first.
 **a. Start it.**
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=oracle
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing hazards:=oracle
 ```
 
 `ros2 topic echo --once /obstacles/tracked` should print the walker with `source: oracle`.
@@ -341,7 +342,7 @@ first.
 scripts/dev.sh track-smoke crossing --rtf 0.25
 ```
 
-(or, natively, `ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=flow rtf:=0.25`
+(or, natively, `ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing hazards:=flow rtf:=0.25`
 with `ros2 run rapid_nav_tools track_check --scenario crossing --out <folder>` and `nav_run --hazards flow` in two more
 terminals.) It writes `track_check_crossing_<time>/` with `summary.md`, `results.json`, a picture of true and tracked
 paths and the goal run's own bundle. `ros2 topic echo --once /obstacles/tracked` during the run prints tracks with

@@ -1,0 +1,12 @@
+# M4: the dynamic hybrid. The navigation stack builds its map online with SLAM. Without hazards
+# (off), with the fused lidar-camera tracks for the hazard layer and the governor (fused), and with
+# those tracks also removed from the scan that SLAM maps (fused_filter). nav_run scores the SLAM
+# trajectory and the final map (ghost walls of the movers). 27 runs at RTF 0.25.
+name: m4
+rtf: 0.25
+scenarios: [crossing, head_on, crowd]
+controllers: [dwb]
+hazards: ["off", fused, fused_filter]
+repeats: 3
+seed: 7
+track_check: false

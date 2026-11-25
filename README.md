@@ -27,6 +27,7 @@ Parts marked done are on `main` and covered by CI; the simulation runs on a CPU 
 | Hazard layer: velocity-aware costmap from tracked obstacles (oracle or camera) | done |
 | Experiments: repeated matrices, resumable runner, bootstrap statistics | done |
 | Hybrid: lidar–camera Kalman fusion, risk cost, time-to-collision speed governor ([docs/hybrid.md](docs/hybrid.md)) | done |
+| Navigation on an online SLAM map (slam_toolbox); fused tracks removed from the scan before SLAM; map-quality scoring ([docs/slam.md](docs/slam.md)) | first runs |
 
 ## Pipeline
 
@@ -80,10 +81,21 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-Start the simulation (Gazebo with the arena and the robot, the odometry and RViz):
+Start the demo: one command, no arguments. Gazebo with the arena, the robot and a small crowd of moving obstacles;
+SLAM builds the map online; Nav2 plans and drives to each goal you click with "Nav2 Goal" in RViz; the camera's
+optical flow is fused with the lidar into moving-obstacle tracks for the costmaps and the speed governor. RViz shows
+only the robot, the lidar outline and the flow: a mesh of what the camera sees (tinted by height, movers in the colour
+of their heading) and one arrow per moving object.
 
 ```bash
 ros2 launch rapid_nav_bringup sim.launch.py
+```
+
+The sections below are the experiment set-ups the scripts use; giving `stack:=` switches from the demo to them. The
+robot alone (for teleop and the automatic check):
+
+```bash
+ros2 launch rapid_nav_bringup sim.launch.py stack:=sim
 ```
 
 Drive the robot with the keyboard, in a second terminal:
@@ -102,14 +114,15 @@ Start the simulation with the global planning stack (the map, AMCL localisation 
 for each goal you click with "2D Goal Pose"):
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py planning:=true
+ros2 launch rapid_nav_bringup sim.launch.py stack:=planning
 ```
 
-Start the navigation stack (the planning stack, Nav2's controller, behaviour and BT navigator servers, and our DWA
-controller; `controller:=dwb` or `controller:=rpp` chooses the others). Click a goal with "2D Goal Pose" in RViz:
+Start the navigation stack (SLAM builds the map from the lidar as the robot drives, so there is no pre-built map; the
+planner, Nav2's controller, behaviour and BT navigator servers, and our DWA controller; `controller:=dwb` or
+`controller:=rpp` chooses the others). Click a goal with "2D Goal Pose" in RViz:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation
 ```
 
 With the stack running, run a goal scenario and score it on the simulator's ground truth, in a second terminal:
@@ -122,7 +135,7 @@ Add moving obstacles (a person who crosses the robot's path, one who comes head-
 argument (`crossing`, `head_on` or `crowd`), then run the same scenario:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing
 ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
 ```
 
@@ -133,6 +146,10 @@ time (`rtf:=0.25`, `--rtf 0.25` for `scripts/dev.sh`) so that the flow network k
 and the camera in one Kalman filter per obstacle, turns the prediction's uncertainty into an occupancy cost and adds a
 time-to-collision speed limit; see [docs/hybrid.md](docs/hybrid.md).
 
+`nav_run` also scores the SLAM trajectory and the final map against the arena. Add `scan_filter:=true` (with
+`hazards:=fused`, and `--scan-filter` to `nav_run`) to keep the tracked people out of the SLAM map; see
+[docs/slam.md](docs/slam.md).
+
 The maps, the planners, the controllers and the goal runs are described in [docs/navigation.md](docs/navigation.md), the repeated experiments in [docs/experiments.md](docs/experiments.md); the
 steps for the tester are in [docs/sim-checks.md](docs/sim-checks.md) (sections 10 to 15).
 
@@ -140,7 +157,7 @@ Start the optical flow on the camera (Farnebäck always, RAFT when PyTorch is in
 [docs/perception.md](docs/perception.md)):
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=farneback
 ```
 
 The robot is described in [docs/robot.md](docs/robot.md). The step-by-step check procedure for testers is in

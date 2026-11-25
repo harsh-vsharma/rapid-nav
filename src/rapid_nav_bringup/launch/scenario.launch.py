@@ -26,6 +26,12 @@ def generate_launch_description():
                         "scenario (true or zero velocities); 'off', 'flow' and 'fused' start "
                         'nothing.',
         ),
+        DeclareLaunchArgument(
+            'yield_to_robot',
+            default_value='false',
+            description="'true': the walkers slow down and stop when the robot is ahead of them "
+                        '(the demo); the experiments keep them to their script.',
+        ),
         OpaqueFunction(function=launch_setup),
     ])
 
@@ -56,6 +62,7 @@ def launch_setup(context):
         raise RuntimeError(
             "hazards must be 'off', 'oracle', 'oracle_static', 'flow' or 'fused', got '{}'".format(
                 hazards))
+    yielding = LaunchConfiguration('yield_to_robot').perform(context).strip().lower() == 'true'
     oracle = []
     if hazards in ('oracle', 'oracle_static'):
         oracle = [Node(
@@ -81,6 +88,7 @@ def launch_setup(context):
             executable='obstacle_driver',
             name='obstacle_driver',
             output='screen',
-            parameters=[{'scenario': name, 'use_sim_time': True}],
+            parameters=[{'scenario': name, 'use_sim_time': True,
+                         'yield_stop_m': 0.9 if yielding else 0.0}],
         ),
     ]

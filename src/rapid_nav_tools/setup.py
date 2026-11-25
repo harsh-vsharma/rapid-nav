@@ -31,6 +31,7 @@ setup(
             'oracle_obstacles = rapid_nav_tools.oracle_obstacles:main',
             'track_check = rapid_nav_tools.track_check:main',
             'experiment_report = rapid_nav_tools.experiment_report:main',
+            'demo_mission = rapid_nav_tools.demo_mission:main',
         ],
     },
 )

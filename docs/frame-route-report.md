@@ -19,7 +19,7 @@ The branch makes two changes:
 How to use the new backend:
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=frame_route
+ros2 launch rapid_nav_bringup sim.launch.py stack:=perception flow_backend:=frame_route
 ```
 
 It needs PyTorch and two checkpoints; see "Weights".
@@ -127,7 +127,7 @@ To go back to the old behaviour: `width:=320` for all backends, plus `route_disp
 - **Cost.** Every backend does about 4x the work per pair. On a CPU, `raft_small` will be about 4x slower than the
   221 ms in `docs/perception.md`, which was measured at 320x240 (the table says so). The node will process fewer
   pairs per second and drop more of them. The `hazards:=flow` setup was sized for 320x240: the simulation at a
-  quarter of real time (`rtf:=0.25`) and 4 threads. It may need a lower `rtf` or the GPU (`flow_device:=cuda`).
+  quarter of real time (`rtf:=0.25`) and 4 threads. It may need a lower `rtf` or a GPU (used automatically when present).
 - **The tracker was tuned at 320x240.** `flow_tracker` works on 4x4-pixel blocks (`depth_block`) and has a
   per-block texture threshold (`min_texture` 6.0). At 640x480:
   - a block covers a quarter of the scene area it used to;
@@ -153,7 +153,7 @@ This chain was traced from the launch files, the bridge config and the node sour
 7. **`ros_gz_bridge`** sends `/cmd_vel` back to Gazebo, where the diff-drive plugin moves the robot.
 
 The flow itself never goes back into Gazebo. The loop closes through the robot's motion: only `/cmd_vel` returns.
-The full loop runs with `navigation:=true hazards:=flow`. With `perception:=true` alone, the chain stops after step 3.
+The full loop runs with `stack:=navigation hazards:=flow`. With `stack:=perception` alone, the chain stops after step 3.
 
 ## Verification
 

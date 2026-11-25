@@ -27,6 +27,8 @@ setup(
             'flow_node = rapid_nav_perception.flow_node:main',
             'flow_tracker = rapid_nav_perception.flow_tracker:main',
             'fusion_node = rapid_nav_perception.fusion_node:main',
+            'scan_filter_node = rapid_nav_perception.scan_filter_node:main',
+            'scene_viz = rapid_nav_perception.scene_viz_node:main',
         ],
     },
 )

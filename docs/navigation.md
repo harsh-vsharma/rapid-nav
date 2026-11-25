@@ -12,14 +12,12 @@ flowchart LR
   BT["bt_navigator<br/>navigate_rapid.xml"] -->|ComputePathToPose, 1 Hz| PS["planner_server<br/>RapidAStarSmooth"]
   BT -->|FollowPath| CS["controller_server<br/>FollowPath: dwa, dwb or rpp"]
   BT -->|spin, back up, wait| BS["behavior_server"]
-  MS["map_server"] --> GC["global costmap<br/>map + lidar"]
-  AMCL["AMCL"] -->|map to odom| BT
+  SLAM["slam_toolbox<br/>online map from the lidar"] -->|/map| GC["global costmap<br/>SLAM map + lidar"]
+  SLAM -->|map to odom| BT
   PS --> GC
   CS --> LC["local costmap<br/>4 x 4 m in odom, lidar"]
   CS -->|/cmd_vel, Twist| ROBOT["robot<br/>differential drive"]
-  LM["lifecycle_manager_navigation"] -. activates .-> MS
-  LM -. activates .-> AMCL
-  LM -. activates .-> PS
+  LM["lifecycle_manager_navigation"] -. activates .-> PS
   LM -. activates .-> CS
   LM -. activates .-> BS
   LM -. activates .-> BT
@@ -30,9 +28,11 @@ Nav2's tree that replans the path once a second and uses our planner as the defa
 clears the costmaps, spins, waits or backs up (the behaviour server). A goal comes from RViz ("2D Goal Pose") or from
 the action directly.
 
-`sim.launch.py navigation:=true` starts the whole stack with the simulation, under one lifecycle manager that starts
+`sim.launch.py stack:=navigation` starts the whole stack with the simulation, under one lifecycle manager that starts
 each server in turn (`autostart`). The argument `controller:=dwa|dwb|rpp` chooses the controller (default `dwa`).
-`planning:=true` and `navigation:=true` are not passed together: the navigation stack includes the planning stack.
+The navigation stack has no pre-built map: slam_toolbox builds it from the lidar while the robot drives (see
+[slam.md](slam.md)). `stack:=planning` is separate: the seven planners on the fixed arena map with AMCL, to compare
+the planners.
 
 ## Maps
 
@@ -57,13 +57,14 @@ The maze is a list of rectangles in `make_maps.py`; the module docstring draws i
 
 ## Localisation
 
-`planning.launch.py` and `navigation.launch.py` start AMCL (`nav2_amcl`) on the arena map with the differential motion
-model and the likelihood field for the laser (`/scan`, 60 beams, 500 to 2000 particles). AMCL starts at the robot's
-spawn pose and publishes the `map → odom` transform; `odom → base_footprint` stays with the odometry of S1.
+The navigation stack localises with SLAM: slam_toolbox publishes `map → odom` and the map it builds
+([slam.md](slam.md)). Its map frame starts at the robot, so `stack:=navigation` needs the default spawn (0, 0, 0).
 
-Two modes for the planning stack:
+The planning stack (`planning.launch.py`) uses the fixed maps instead. It starts AMCL (`nav2_amcl`) on the map with the
+differential motion model and the likelihood field for the laser (`/scan`, 60 beams, 500 to 2000 particles). AMCL starts
+at the robot's spawn pose and publishes `map → odom`; `odom → base_footprint` stays with the odometry of S1. Two modes:
 
-- `localization:=amcl` (default): the simulation. `sim.launch.py planning:=true` starts it with the spawn pose.
+- `localization:=amcl` (default): the simulation. `sim.launch.py stack:=planning` starts it with the spawn pose.
 - `localization:=static`: no simulation. `map → odom` is the identity and `odom → base_footprint` is the initial pose,
   so the planner can be exercised without Gazebo.
 
@@ -198,7 +199,7 @@ measure all three on the same scenarios.
 `nav_run` sends a scenario's goals (`config/nav_scenarios.yaml`) to `/navigate_to_pose` one after another, samples the
 robot while each goal runs, and scores each goal against the simulator's ground truth (`/ground_truth/odom`).
 
-Why the ground truth: the wheel odometry and AMCL both believe the robot is where they estimate it, and the robot can
+Why the ground truth: the wheel odometry and SLAM both believe the robot is where they estimate it, and the robot can
 slip, be pushed or collide while they still say it arrived. The team's question is whether a controller reaches the
 goal and keeps clear of the obstacles, and only the simulator knows that. Nav2's own verdict is recorded next to the
 truth, and every disagreement between the two is counted, because that disagreement is the evaluation problem made
@@ -217,7 +218,7 @@ Per goal:
 | collision episodes | the number of times the body clearance dropped below 0 m (entries, not samples) |
 | recoveries | the number of recoveries reported by the action's feedback |
 | odometry drift | how far the wheel odometry's motion over the goal differs from the truth's motion |
-| AMCL error | the distance of AMCL's pose from the truth at the end of the goal |
+| SLAM error | the distance of the robot's map-frame pose (SLAM) from the truth at the end of the goal; the run's whole trajectory error and the map's quality are in the SLAM section ([slam.md](slam.md)) |
 
 The checks for `dwa`: every goal reached by truth, no collision episode, and a minimum body clearance of at least
 0.05 m. The rows for `dwb` and `rpp` are information.
@@ -225,7 +226,8 @@ The checks for `dwa`: every goal reached by truth, no collision episode, and a m
 The bundle `nav_run_<scenario>_<controller>_<time>/` holds `environment.txt`, `results.json` (every goal, and the samples
 at 10 Hz of simulated time), `summary.md` (the check table and the per-goal table) and `trajectories_<scenario>.png`
 (the map, the boxes, the track coloured by speed, the goals numbered and the plans in blue). The `unmapped` scenario
-spawns two 0.5 m boxes that are not in the map (`spawn.txt` logs the spawn); restart the launch before each run of it.
+spawns two 0.5 m boxes that are not in the arena map (`spawn.txt` logs the spawn; SLAM maps them, and the map score
+counts them as true walls); restart the launch before each run of it.
 
 ```bash
 scripts/dev.sh nav-smoke tour dwa          # Docker: starts the stack, runs the scenario, copies the launch log
@@ -280,7 +282,7 @@ obstacles stay in the world.
 
 ```bash
 scripts/dev.sh nav-smoke crossing dwa      # Docker
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing      # native, then in a second terminal:
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing      # native, then in a second terminal:
 ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwa
 ```
 
@@ -301,37 +303,6 @@ the corners of its path. The navigation rows of a dynamic scenario are informati
 controller, our DWA included: what the controllers do against moving obstacles is the baseline measured here, and
 nothing was tuned for it. The baseline is Nav2 with the standard lidar obstacle layer: it sees geometry and has no
 notion of what moves, so a moving obstacle leaves a mark in the costmap until the lidar clears it.
-
-### Baseline results (S4)
-
-Measured as above in the Docker development image on an Apple M1 (an arm64 virtual machine with 8 CPUs and 4.8 GiB),
-indicative only; times are simulated seconds. One run per row unless marked repeat. All scenario-validity rows pass in
-every row shown.
-
-| scenario | controller | goals reached (truth) | collisions | min dynamic clearance (m) | closest approach (m) | close encounters | recoveries | mean time per goal (s) |
-|---|---|---|---|---|---|---|---|---|
-| crossing | dwa | 3/3 | 1 | -0.052 | 0.40 | 3 | 6 | 14.5 |
-| crossing | dwa (repeat) | 3/3 | 1 | -0.052 | 0.40 | 2 | 3 | 13.3 |
-| crossing | dwb | 3/3 | 1 | -0.052 | 0.40 | 2 | 1 | 13.9 |
-| crossing | rpp | 3/3 | 0 | 0.158 | 0.61 | 2 | 5 | 15.6 |
-| crowd | dwa | 3/3 | 2 | -0.050 | 0.50 | 5 | 13 | 18.0 |
-| crowd | dwb | 3/3 | 1 | -0.055 | 0.40 | 3 | 3 | 14.2 |
-| crowd | rpp | 3/3 | 1 | -0.038 | 0.53 | 4 | 9 | 17.7 |
-| head_on | dwa | 2/2 | 1 | -0.051 | 0.40 | 1 | 6 | 16.9 |
-| head_on | dwa (repeat) | 2/2 | 0 | 0.077 | 0.53 | 1 | 0 | 17.1 |
-| head_on | dwb | 2/2 | 1 | -0.051 | 0.40 | 1 | 3 | 16.3 |
-| head_on | rpp | 2/2 | 1 | -0.007 | 0.44 | 1 | 6 | 19.0 |
-
-- `crossing`: the walker and the robot meet near (1.5, 0) in every run. Our DWA and DWB each touch the walker once on
-  goal 2 (clearance -0.05 m); RPP passes at 0.16 m. The two DWA runs agree on goals, collisions and clearance.
-- `head_on`: the walker walks into the robot's line and the robot sidesteps south of it. The closest approach is
-  0.40 to 0.53 m, with a clearance around zero. Our DWA's two runs differ (one touch, then none, clearance 0.08 m); DWB
-  and RPP each touch once (-0.05 m and -0.01 m).
-- `crowd`: every controller reaches every goal and touches a moving obstacle at least once: our DWA twice (-0.05 m,
-  13 recoveries), DWB and RPP once each (-0.06 m and -0.04 m). The two persons' paths never meet each other, so every
-  contact involves the robot.
-- One run of a pass is not enough to rank controllers: the outcome depends on small differences in timing around a
-  clearance of zero.
 
 ## Hazard layer
 
@@ -384,7 +355,7 @@ it replans at 1 Hz).
 **Running it.**
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=oracle
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing hazards:=oracle
 scripts/dev.sh nav-smoke crossing dwb oracle
 scripts/dev.sh nav-smoke crossing dwb flow --rtf 0.25
 ```
@@ -392,85 +363,17 @@ scripts/dev.sh nav-smoke crossing dwb flow --rtf 0.25
 `nav_run --hazards` records the choice in `environment.txt`, `results.json` and `summary.md`. A run with the layer is
 named `nav_run_<scenario>_<controller>_<hazards>_<time>`.
 
-### First results (S7)
-
-The three S4 scenarios with the three controllers, one run per cell, under `oracle` and `oracle_static`, beside the S4
-baseline (`off`). Same machine and conditions as the S4 baseline; all scenario-validity rows pass. Nothing was tuned.
-
-| scenario | controller | hazards | goals reached | collisions | min dynamic clearance (m) | closest approach (m) | recoveries | mean time per goal (s) | validity |
-|---|---|---|---|---|---|---|---|---|---|
-| crossing | dwa | off (S4) | 3/3 | 1 | -0.052 | 0.40 | - | 14.5 | PASS |
-| crossing | dwa | oracle | 2/3 | 1 | -0.060 | 0.39 | 25 | 79.5 | PASS |
-| crossing | dwa | oracle_static | 3/3 | 1 | -0.052 | 0.40 | 8 | 22.1 | PASS |
-| crossing | dwb | off (S4) | 3/3 | 1 | -0.052 | 0.40 | - | 13.9 | PASS |
-| crossing | dwb | oracle | 3/3 | 2 | -0.056 | 0.39 | 14 | 18.6 | PASS |
-| crossing | dwb | oracle_static | 3/3 | 1 | -0.052 | 0.40 | 4 | 14.0 | PASS |
-| crossing | rpp | off (S4) | 3/3 | 0 | 0.158 | 0.61 | - | 15.6 | PASS |
-| crossing | rpp | oracle | 3/3 | 0 | 0.270 | 0.72 | 0 | 15.0 | PASS |
-| crossing | rpp | oracle_static | 3/3 | 0 | 0.172 | 0.62 | 4 | 14.9 | PASS |
-| head_on | dwa | off (S4) | 2/2 | 1 | -0.051 | 0.40 | - | 16.9 | PASS |
-| head_on | dwa | oracle | 2/2 | 1 | -0.008 | 0.44 | 3 | 15.1 | PASS |
-| head_on | dwa | oracle_static | 2/2 | 1 | -0.050 | 0.40 | 6 | 17.2 | PASS |
-| head_on | dwb | off (S4) | 2/2 | 1 | -0.051 | 0.40 | - | 16.3 | PASS |
-| head_on | dwb | oracle | 2/2 | 1 | -0.018 | 0.43 | 3 | 16.0 | PASS |
-| head_on | dwb | oracle_static | 2/2 | 1 | -0.033 | 0.42 | 4 | 21.1 | PASS |
-| head_on | rpp | off (S4) | 2/2 | 1 | -0.007 | 0.44 | - | 19.0 | PASS |
-| head_on | rpp | oracle | 2/2 | 1 | -0.009 | 0.44 | 6 | 19.4 | PASS |
-| head_on | rpp | oracle_static | 2/2 | 1 | -0.006 | 0.44 | 6 | 19.1 | PASS |
-| crowd | dwa | off (S4) | 3/3 | 2 | -0.050 | 0.50 | - | 18.0 | PASS |
-| crowd | dwa | oracle | 2/3 | 3 | -0.054 | 0.43 | 4 | 15.2 | PASS |
-| crowd | dwa | oracle_static | 2/3 | 1 | -0.058 | 0.49 | 11 | 15.1 | PASS |
-| crowd | dwb | off (S4) | 3/3 | 1 | -0.055 | 0.40 | - | 14.2 | PASS |
-| crowd | dwb | oracle | 3/3 | 0 | 0.005 | 0.45 | 0 | 14.0 | PASS |
-| crowd | dwb | oracle_static | 3/3 | 3 | -0.058 | 0.39 | 9 | 17.3 | PASS |
-| crowd | rpp | off (S4) | 3/3 | 1 | -0.038 | 0.53 | - | 17.7 | PASS |
-| crowd | rpp | oracle | 3/3 | 2 | -0.010 | 0.55 | 9 | 19.0 | PASS |
-| crowd | rpp | oracle_static | 2/3 | 2 | -0.056 | 0.45 | 17 | 19.9 | PASS |
-
-These are single runs and they are information, not a ranking. S4 showed that head-on and crossing outcomes sit around a
-clearance of zero and change from run to run (two identical runs of our DWA differed), so differences of a few
-centimetres or of one collision are within that noise. What the table does show: the stack runs to the end with the layer
-on; the oracle band shifts the head-on clearances from about -0.05 m to about -0.01 m for all three controllers; RPP
-passes the crossing further away (0.27 m against 0.16 m); and the layer is not free: four runs (three of them our DWA)
-miss a goal that the baseline reached, which is a finding to look into and not a tuned result. The repeated matrix and
-the ranking are the experiments of S9.
-
-### First results with the camera source (S3)
-
-`crossing`, `head_on` and `crowd` with the dwb controller, `off`, `oracle` and `flow`, one run each at `rtf:=0.25` (measured
-0.24 in every run). All scenario-validity rows pass. The flow rows come from `track-smoke`, which also scores the tracks
-(the last three columns); the `head_on` runs are of the current 2-goal scenario.
-
-| scenario | hazards | goals reached | collisions | min dynamic clearance (m) | closest approach (m) | mean time per goal (s) | false tracks per s | detection (in view) |
-|---|---|---|---|---|---|---|---|---|
-| crossing | off | 3/3 | 1 | -0.05 | 0.40 | 14.1 | | |
-| crossing | oracle | 3/3 | 1 | -0.06 | 0.39 | 25.5 | | |
-| crossing | flow | 3/3 | 1 | -0.04 | 0.41 | 16.1 | 0.71 | 0.43 (12 of 28) |
-| head_on | off | 2/3 | 0 | 0.04 | 0.49 | 15.2 | | |
-| head_on | oracle | 2/3 | 0 | 0.02 | 0.47 | 15.2 | | |
-| head_on | flow | 2/3 | 0 | 0.05 | 0.50 | 15.0 | 0.64 | 0.55 (17 of 31) |
-| crowd | off | 3/3 | 1 | -0.05 | 0.40 | 13.9 | | |
-| crowd | oracle | 3/3 | 0 | 0.04 | 0.49 | 13.8 | | |
-| crowd | flow | 3/3 | 0 | 0.14 | 0.59 | 14.3 | 0.73 | 0.63 (54 of 86) |
-
-These are single runs, and the differences are of the size of the run-to-run spread already seen in S4 and S7: one
-collision episode more or less, a few centimetres of clearance. Read honestly: the camera source did not make the robot
-worse than `off` in any scenario, matched the oracle on `head_on` and `crowd`, and did not avoid the `crossing`
-collision (nor did the oracle). The tracks it feeds are far from perfect (about 0.7 false tracks per second, and at
-most two thirds of the in-view obstacles detected); the false tracks sit mostly on far walls where the costmap is
-already high, so they cost little here. The matrix with repeats is the experiment of S9.
-
 ## Repeated runs
 
-The results above are single runs. The repeated experiment matrices, the runner and the report with intervals
-are described in [experiments.md](experiments.md).
+The repeated experiment matrices, the runner and the report with intervals are described in
+[experiments.md](experiments.md).
 
 ## Tools
 
 - **`path_viewer`** answers each goal from RViz ("2D Goal Pose") with every planner, from the robot's current pose. Each
   path is published on `/planned_paths/<planner_id>`, one colour per planner in `navigation.rviz`. The viewer asks one
   planner at a time, because the planner server runs one goal at a time. It runs when `planning.launch.py` starts with
-  AMCL and `path_viewer:=true`; it does not run with `navigation:=true`, where "2D Goal Pose" drives the robot.
+  AMCL and `path_viewer:=true`; it does not run with `stack:=navigation`, where "2D Goal Pose" drives the robot.
 - **`planner_check`** asks every planner every query in `config/planner_queries.yaml` and writes a bundle: `summary.md`,
   `table_<map>.md`, `results.csv`, `results.json`, `paths_<map>.png`. It checks feasible queries (every planner
   succeeds), infeasible ones (the right error code, with no path), the clearance of every path (at least 0.20 m from
@@ -541,29 +444,10 @@ in an obstacle instead of `GOAL_OCCUPIED`.
 Dijkstra and A* found the same cost on every query. Theta* gives shorter paths but a higher weighted cost: it trades
 the inflation cost for length.
 
-### Goal runs (S6)
+## Configuration notes
 
-Measured with `nav_run` on the arena: the headless simulation with `navigation:=true`, the Docker development image on
-an Apple M1 (an arm64 virtual machine with 8 CPUs and 4.8 GiB, not a native machine). Times are simulated seconds and
-are indicative only. Both scenarios are described above; the `dwa` runs are the ones the checks apply to.
-
-| scenario | controller | goals reached (truth) | goals reached (Nav2) | collisions | min clearance (m) | mean time, goals reached by truth (s) | mean tracking (m) | recoveries | odometry drift, last goal (m) | disagreements |
-|---|---|---|---|---|---|---|---|---|---|---|
-| tour | dwa | 6/6 | 6/6 | 0 | 0.197 | 9.9 | 0.044 | 0 | 0.101 | 0 |
-| tour | dwa (repeat) | 6/6 | 6/6 | 0 | 0.200 | 9.8 | 0.038 | 0 | 0.052 | 0 |
-| tour | dwb | 6/6 | 6/6 | 0 | 0.220 | 10.5 | 0.040 | 0 | 0.120 | 0 |
-| tour | rpp | 6/6 | 6/6 | 0 | 0.204 | 11.2 | 0.037 | 0 | 0.031 | 0 |
-| unmapped | dwa | 3/3 | 3/3 | 0 | 0.146 | 13.1 | 0.038 | 0 | 0.053 | 0 |
-| unmapped | dwb | 3/3 | 3/3 | 0 | 0.057 | 13.9 | 0.057 | 0 | 0.341 | 0 |
-| unmapped | rpp | 3/3 | 3/3 | 0 | 0.197 | 14.8 | 0.031 | 0 | 0.080 | 0 |
-
-Two settings matter for these numbers. DWB's own `xy_goal_tolerance` must not exceed the goal checker's (0.15 m): with
+Two settings matter for the goal runs. DWB's own `xy_goal_tolerance` must not exceed the goal checker's (0.15 m): with
 a larger value DWB stops to turn towards the goal's yaw before the goal checker accepts the position, and the robot
 halts short of the goal until the progress checker gives up. And the BT navigator's `default_server_timeout` is 200 ms,
 not Nav2's 20 ms: on a loaded machine the planner server can take longer than 20 ms to acknowledge `ComputePathToPose`,
-and a missed acknowledgement leaves no error code, so the tree aborts the goal without trying a recovery. The `rpp`
-rows and the `unmapped` `dwa` row were measured before the timeout was raised; no goal in them hit it.
-
-DWB passes closest to the unmapped box on the first goal (0.057 m); our DWA keeps 0.146 m and RPP 0.197 m there.
-
-The peak memory of the development container in one `tour` run with `dwa` was 741 MiB (`docker stats` every 6 s).
+and a missed acknowledgement leaves no error code, so the tree aborts the goal without trying a recovery.

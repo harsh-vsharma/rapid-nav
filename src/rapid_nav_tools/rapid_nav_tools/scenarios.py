@@ -353,3 +353,24 @@ def world_velocity(orientation_xyzw, body_linear_xyz):
     row1 = (2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w))
     return (row0[0] * vx + row0[1] * vy + row0[2] * vz,
             row1[0] * vx + row1[1] * vy + row1[2] * vz)
+
+
+def yield_factor(obstacle_xy, velocity_xy, robot_xy, stop_m=0.9, slow_m=1.8, cone_deg=75.0):
+    """
+    Return the share (0..1) of its scripted speed an obstacle keeps to make way for the robot.
+
+    A person slows down when the robot is ahead of them (within cone_deg of their walking
+    direction) and closer than slow_m (centre to centre), and stops at stop_m, as people do; a
+    robot beside or behind them does not slow them. With no robot position or no motion: 1.
+    """
+    if robot_xy is None:
+        return 1.0
+    vx, vy = velocity_xy
+    speed = math.hypot(vx, vy)
+    dx, dy = robot_xy[0] - obstacle_xy[0], robot_xy[1] - obstacle_xy[1]
+    dist = math.hypot(dx, dy)
+    if speed < 1e-9 or dist >= slow_m:
+        return 1.0
+    if dist > 1e-9 and (dx * vx + dy * vy) / (dist * speed) < math.cos(math.radians(cone_deg)):
+        return 1.0
+    return min(1.0, max(0.0, (dist - stop_m) / (slow_m - stop_m)))

@@ -338,3 +338,14 @@ def test_sdf_has_the_texture_and_keeps_the_flat_colour():
         material = root.find('.//visual/material')
         assert material.find('ambient') is not None and material.find('diffuse') is not None
         assert material.find('pbr/metal/albedo_map').text == TEXTURE_URI
+
+
+def test_yield_factor_slows_and_stops_only_for_a_robot_ahead():
+    from rapid_nav_tools.scenarios import yield_factor
+    walker, east = (0.0, 0.0), (0.5, 0.0)
+    assert yield_factor(walker, east, None) == 1.0
+    assert yield_factor(walker, east, (3.0, 0.0)) == 1.0           # far ahead
+    assert yield_factor(walker, east, (0.8, 0.0)) == 0.0           # close ahead: stop
+    assert 0.0 < yield_factor(walker, east, (1.35, 0.0)) < 1.0     # slowing down
+    assert yield_factor(walker, east, (-0.8, 0.0)) == 1.0          # behind: keeps walking
+    assert yield_factor(walker, east, (0.0, 0.8)) == 1.0           # beside: keeps walking

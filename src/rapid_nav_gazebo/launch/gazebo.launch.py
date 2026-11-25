@@ -19,7 +19,7 @@ CAMERA_ARGUMENTS = [
     ('camera_width', '640'),
     ('camera_height', '480'),
     ('camera_rate', '30'),
-    ('camera_hfov', '1.211'),
+    ('camera_hfov', '1.5708'),
     ('camera_pitch', '0.0'),
 ]
 

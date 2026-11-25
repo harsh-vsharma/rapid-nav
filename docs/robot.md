@@ -28,8 +28,8 @@ All positions are relative to the parent link. `base_link` sits on the wheel axi
 
 The total mass is 7.3 kg. The deck, the bumper and the camera mount are visual only (no mass, no collision).
 
-The camera sits below the lidar's scan plane, so the lidar sees over it. With the default 69.4° horizontal field of
-view at 640 × 480, the floor becomes visible about 0.43 m ahead.
+The camera sits below the lidar's scan plane, so the lidar sees over it. With the default 90° horizontal field of
+view at 640 × 480, the floor becomes visible about 0.30 m ahead.
 
 The frame tree as seen by TF is `odom → base_footprint → base_link → {camera_link → camera_optical_frame, imu_link,
 lidar_link, turret_link, left_wheel_link, right_wheel_link, front_caster_link, rear_caster_link}`. The transform
@@ -40,7 +40,7 @@ lidar_link, turret_link, left_wheel_link, right_wheel_link, front_caster_link, r
 
 | sensor | on link | type | rate | settings | ROS topic(s) | frame |
 |---|---|---|---|---|---|---|
-| RGB-D camera | `camera_link` | `rgbd_camera` | 30 Hz | 640 × 480 `R8G8B8`, 69.4° horizontal field of view, clip 0.1–10 m, image noise σ 0.007 | `/camera/image`, `/camera/depth_image` (32FC1, metres), `/camera/camera_info`, `/camera/points` | `camera_optical_frame` |
+| RGB-D camera | `camera_link` | `rgbd_camera` | 30 Hz | 640 × 480 `R8G8B8`, 90° horizontal field of view, clip 0.1–10 m, image noise σ 0.007 | `/camera/image`, `/camera/depth_image` (32FC1, metres), `/camera/camera_info`, `/camera/points` | `camera_optical_frame` |
 | IMU | `imu_link` | `imu` | 200 Hz | gyro noise σ 0.0025 rad/s, bias σ 0.0005; accelerometer noise σ 0.02 m/s², bias σ 0.01 | `/imu` | `imu_link` |
 | 2D lidar | `lidar_link` | `gpu_lidar` | 10 Hz | 360 beams over a full turn, range 0.12–12 m, noise σ 0.01 m | `/scan` | `lidar_link` |
 | wheel odometry | (DiffDrive plugin) | — | 50 Hz | wheel separation 0.45 m, wheel radius 0.05 m | `/odom` | `odom` → `base_footprint` |
@@ -71,7 +71,7 @@ The camera's size, rate and field of view are xacro arguments: `camera_width`, `
 
 ## Launch files
 
-`ros2 launch rapid_nav_bringup sim.launch.py` starts Gazebo with the arena and the robot, the topic bridge, the
+`ros2 launch rapid_nav_bringup sim.launch.py stack:=sim` starts Gazebo with the arena and the robot, the topic bridge, the
 robot_state_publisher, the odometry source and RViz.
 
 | argument | default | meaning |

@@ -6,7 +6,7 @@
   <xacro:arg name="camera_width" default="640"/>
   <xacro:arg name="camera_height" default="480"/>
   <xacro:arg name="camera_rate" default="30"/>
-  <xacro:arg name="camera_hfov" default="1.211"/>
+  <xacro:arg name="camera_hfov" default="1.5708"/>
   <xacro:arg name="camera_pitch" default="0.0"/>
 
   <xacro:include filename="properties.xacro"/>

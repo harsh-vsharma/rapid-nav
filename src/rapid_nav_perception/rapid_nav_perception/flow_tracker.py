@@ -73,13 +73,22 @@ class FlowTracker(Node):
         self.declare_parameter('target_frame', 'map')
         self.declare_parameter('topic', '/obstacles/tracked')
         self.declare_parameter('uncertainty', False)
+        # 'shared' (default): the TF listener spins this node in a second executor. 'dedicated': it
+        # gets a node of its own, so /tf keeps arriving while on_frame waits for the transform at
+        # the newest depth stamp (with the shared node the wait sees no new data and times out).
+        self.declare_parameter('tf_listener_node', 'shared')
+        listener_node = str(self.get_parameter('tf_listener_node').value).strip().lower()
+        if listener_node not in ('shared', 'dedicated'):
+            raise ValueError("tf_listener_node must be 'shared' or 'dedicated', got '{}'".format(
+                listener_node))
         self.uncertainty = bool(self.get_parameter('uncertainty').value)
         self.p = {name: self.get_parameter(name).value for name in self.DEFAULTS}
         self.target = self.get_parameter('target_frame').value
         self.tracker = Tracker(self.p['gate'], self.p['alpha'], self.p['max_track_age'],
                                int(self.p['confirm']))
         self.buffer = Buffer()
-        self.listener = TransformListener(self.buffer, self, spin_thread=True)
+        self.listener = TransformListener(
+            self.buffer, self if listener_node == 'shared' else None, spin_thread=True)
         self.pub = self.create_publisher(
             TrackedObstacleArray, self.get_parameter('topic').value, 10)
         self.create_subscription(FlowFrame, '/perception/flow_frame', self.on_frame, 2)

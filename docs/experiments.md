@@ -1,19 +1,22 @@
 # Experiments
 
-One run per cell, as in the first results of the navigation stages, says little: head-on and crossing encounters end
+One run per cell says little: head-on and crossing encounters end
 near zero clearance and differ from run to run. The experiment tools repeat every cell in a fresh simulation and report
 the spread and the uncertainty.
 
 ## The matrices
 
-Matrix files are in `src/rapid_nav_tools/config/experiments/`. A file names the scenarios, controllers, hazard
-configurations, the number of repeats, the simulation speed (`rtf`) and a seed.
+Matrix files are in `src/rapid_nav_tools/config/experiments/`. A file names the scenarios, controllers, conditions
+(the `hazards` list), the number of repeats, the simulation speed (`rtf`) and a seed. Every run uses the navigation
+stack, which builds its map with SLAM.
 
 | matrix | what | runs | speed |
 |---|---|---|---|
-| `pilot` | `crossing` x `dwb` x `off`, `oracle` x 2 repeats; checks the tools | 4 | RTF 1 |
-| `m1` | geometry against knowing the motion: `crossing`, `head_on`, `crowd` x `dwa`, `dwb`, `rpp` x `off`, `oracle_static`, `oracle` x 5 repeats | 135 | RTF 1 |
-| `m2` | vision: the same scenarios x `dwb` x `off`, `oracle`, `flow` x 5 repeats; `track_check` runs on every `flow` run | 45 | RTF 0.25 |
+| `m4` | the dynamic hybrid: `crossing`, `head_on`, `crowd` x `dwb` x `off`, `fused`, `fused_filter` x 3 repeats | 27 | RTF 0.25 |
+
+A condition is a hazard source (`off`, `oracle`, `oracle_static`, `flow`, `fused`) or `fused_filter`: the fused tracks
+with the dynamic scan filter in front of SLAM ([slam.md](slam.md)). Write a new matrix file for other combinations;
+`track_check: true` adds the camera track check to every `flow` run.
 
 Quote `off` in a matrix file (`"off"`): unquoted, YAML reads it as a boolean.
 
@@ -26,12 +29,12 @@ repeats starts with the same order as one with fewer.
 Docker must be running (`docker desktop start`). From the repository root:
 
 ```bash
-scripts/dev.sh experiment pilot      # or m1, m2, or the path of a matrix file
+scripts/dev.sh experiment m4      # or the path of a matrix file
 ```
 
 Each run is one container with a fresh simulation (`nav-smoke`, or `track-smoke` for `flow` runs of a matrix with
 `track_check: true`). The bundle is moved to `experiments/<name>/` (not tracked by git) and a line is added to
-`experiments/<name>/index.csv`: scenario, controller, hazards, repeat, bundle, exit code, wall time, valid.
+`experiments/<name>/index.csv`: scenario, controller, condition, repeat, bundle, exit code, wall time, valid.
 
 - **Resume.** Run the same command again: runs with exit code 0 and a bundle are skipped.
 - **Stop.** Ctrl+C, or `touch experiments/<name>/STOP`: the runner ends after the current run.
@@ -41,17 +44,16 @@ Each run is one container with a fresh simulation (`nav-smoke`, or `track-smoke`
 - **Disk.** The runner stops cleanly when `/` has less than 3 GiB free (`MIN_FREE_GIB` changes the limit).
 
 Time: one run takes about 2 to 7 minutes of wall time at RTF 1 in Docker on the development Mac (runs where the robot
-waits or recovers are the longest), and about 1/RTF times that at a lower speed. M1 therefore needs several hours and
-M2 about ten. Natively the runs need the same simulated time; with a GPU and more cores they are faster.
+waits or recovers are the longest), and about 1/RTF times that at a lower speed, so m4 needs about six hours. Natively the runs need the same simulated time; with a GPU and more cores they are faster.
 
 ## The report
 
 ```bash
 uv run --with numpy --with pyyaml --with pillow \
-    env PYTHONPATH=src/rapid_nav_tools python -m rapid_nav_tools.experiment_report experiments/pilot/
+    env PYTHONPATH=src/rapid_nav_tools python -m rapid_nav_tools.experiment_report experiments/m4/
 ```
 
-or `ros2 run rapid_nav_tools experiment_report experiments/pilot/` in the built workspace. It writes `report.md`,
+or `ros2 run rapid_nav_tools experiment_report experiments/m4/` in the built workspace. It writes `report.md`,
 `cells.csv`, `pairs.csv` and the plots next to the results (`--out` chooses another folder). It also works on a matrix
 that is only partly done: each cell shows its own n.
 
@@ -73,6 +75,9 @@ There are no p-values. The tables read an interval in words: "the interval exclu
 difference in that direction, "includes zero" means they do not separate the two configurations. With fewer than 10 pairs a percentile bootstrap interval is too narrow; read
 "excludes zero" on few pairs as a hint, not a finding (the tables mark such readings "(few pairs)"). With 5 repeats the
 intervals are an account of the spread, not a test.
+
+**SLAM.** A further table gives per cell the mean trajectory error (ATE RMSE), the map precision and recall, and the
+ghost cells and the ghost cells left by moving obstacles ([slam.md](slam.md)).
 
 **Plots.** Per scenario, the minimum clearance of every valid run (dots) and the mean (bar) per controller and
 configuration, with a red line at zero, and the collision episodes in the same layout.

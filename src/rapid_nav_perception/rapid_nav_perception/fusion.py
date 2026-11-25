@@ -33,12 +33,16 @@ MIN_FLOW_SIGMA = 0.05      # m, m/s: floor for camera sigmas (0 means unknown)
 class StaticGrid:
     """The static map as a boolean mask of cells within the clearance of an occupied cell."""
 
-    def __init__(self, occupied, origin_x, origin_y, resolution, clearance=STATIC_CLEARANCE):
+    def __init__(self, occupied, origin_x, origin_y, resolution, clearance=STATIC_CLEARANCE,
+                 known_free=None):
         """
         Build the mask from `occupied` (rows = y, columns = x, True = occupied).
 
         The map's origin is the world position of the lower-left corner of cell (0, 0), with no
-        rotation (as map_server publishes it).
+        rotation (as map_server and slam_toolbox publish it). With `known_free` (same shape, True
+        where the map knows the cell is free), every cell that is not known to be free is static
+        too: the unknown cells of a map that is still growing, where a new wall shows up before
+        the next map update. Without it (a fixed map) only the occupied cells count.
         """
         occupied = np.asarray(occupied, dtype=bool)
         self.origin_x = float(origin_x)
@@ -55,6 +59,8 @@ class StaticGrid:
                     continue
                 src = occupied[max(0, -dj):height - max(0, dj), max(0, -di):width - max(0, di)]
                 near[max(0, dj):height - max(0, -dj), max(0, di):width - max(0, -di)] |= src
+        if known_free is not None:
+            near |= ~np.asarray(known_free, dtype=bool)
         self.near = near
 
     def is_static(self, xy):
@@ -68,18 +74,23 @@ class StaticGrid:
         return out
 
 
-def lidar_clusters(scan_xy_map, static_grid, link=LINK, min_points=MIN_POINTS):
+def lidar_clusters(scan_xy_map, static_grid, link=LINK, min_points=MIN_POINTS, keep=()):
     """
     Return the clusters of scan points that are not the static map, as dicts x, y, radius, n.
 
     Points within the clearance of an occupied cell (or outside the map) are dropped; the rest are
     linked when closer than `link` (single linkage) and a group needs `min_points` points. The
     centre is the mean of the points, the radius the largest distance of a point from it, at least
-    MIN_CLUSTER_RADIUS. Without a static grid (None) no point is dropped.
+    MIN_CLUSTER_RADIUS. Without a static grid (None) no point is dropped. Points inside one of the
+    `keep` disks (x, y, r) are never dropped: the track guard, for a map that may have absorbed a
+    mover.
     """
     xy = np.asarray(scan_xy_map, dtype=np.float64).reshape(-1, 2)
     if static_grid is not None and xy.shape[0]:
-        xy = xy[~static_grid.is_static(xy)]
+        static = static_grid.is_static(xy)
+        for kx, ky, kr in keep:
+            static &= (xy[:, 0] - kx) ** 2 + (xy[:, 1] - ky) ** 2 > kr * kr
+        xy = xy[~static]
     n = xy.shape[0]
     if n == 0:
         return []
@@ -278,6 +289,19 @@ class Fusion:
             measurements.append((z, H_FLOW, np.diag([sp * sp, sp * sp, sv * sv, sv * sv])))
         for mi, tid, h_t, r_t in self._associate(measurements, t):
             self.tracks[tid].update(measurements[mi][0], h_t, r_t, t)
+
+    def guard_disks(self, t, min_speed=0.2, extra=STATIC_CLEARANCE):
+        """
+        Return (x, y, r) disks of the confirmed tracks faster than `min_speed`, predicted to t.
+
+        r is the track's radius plus `extra`. Scan points in these disks are kept even where the
+        map is occupied, so that a mover which the map has absorbed keeps its track.
+        """
+        out = []
+        for tr in self.confirmed(t):
+            if math.hypot(tr['vx'], tr['vy']) >= min_speed:
+                out.append((tr['x'], tr['y'], tr['radius'] + extra))
+        return out
 
     def confirmed(self, t):
         """

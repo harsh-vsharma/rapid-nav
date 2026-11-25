@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-nav2-planner \
         ros-jazzy-nav2-map-server \
         ros-jazzy-nav2-amcl \
+        ros-jazzy-slam-toolbox \
         ros-jazzy-nav2-lifecycle-manager \
         ros-jazzy-nav2-navfn-planner \
         ros-jazzy-nav2-smac-planner \

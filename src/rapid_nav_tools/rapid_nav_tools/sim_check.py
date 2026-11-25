@@ -1,7 +1,7 @@
 """
 Check the RAPID-NAV simulation in one command and write a bundle.
 
-Start the simulation first (ros2 launch rapid_nav_bringup sim.launch.py), then run:
+Start the simulation first (ros2 launch rapid_nav_bringup sim.launch.py stack:=sim), then run:
 
     ros2 run rapid_nav_tools sim_check [--out DIR] [--duration S] [--profile native|docker]
                                        [--odom-tf ekf|wheel] [--no-drive]
@@ -67,7 +67,7 @@ EXPECTED_RATES = {
 }
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
-CAMERA_HFOV = 1.211
+CAMERA_HFOV = 1.5708
 CLOCK_WAIT_S = 60.0
 SETTLE_WAIT_S = 60.0
 SETTLE_SIM_S = 2.0

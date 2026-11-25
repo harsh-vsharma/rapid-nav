@@ -17,9 +17,9 @@ from PIL import Image, ImageDraw
 
 from rapid_nav_tools import experiments as ex
 
-HAZARD_ORDER = ('off', 'oracle_static', 'oracle', 'flow')
+HAZARD_ORDER = ('off', 'oracle_static', 'oracle', 'flow', 'fused', 'fused_filter')
 HAZARD_COLOURS = {'off': (90, 90, 90), 'oracle_static': (214, 140, 30), 'oracle': (30, 120, 200),
-                  'flow': (40, 160, 90)}
+                  'flow': (40, 160, 90), 'fused': (160, 60, 160), 'fused_filter': (20, 150, 150)}
 WIDTH = 1000
 HEIGHT = 520
 MARGIN_LEFT = 70
@@ -139,6 +139,34 @@ def excluded_rows(records):
     return header, rows
 
 
+def slam_rows(records):
+    """
+    Return (header, rows) of the SLAM table.
+
+    Per cell, the means of the SLAM fields of the valid runs; cells without them are left out.
+    """
+    header = ['scenario', 'controller', 'condition', 'n', 'ATE RMSE (m)', 'map precision',
+              'map recall', 'ghost cells', 'mover ghost cells']
+    groups = {}
+    for r in records:
+        if r.get('valid') and r.get('map_precision') is not None:
+            groups.setdefault((r['scenario'], r['controller'], r['hazards']), []).append(r)
+    rows = []
+    for key in sorted(groups, key=lambda k: (k[0], k[1], hazard_rank(k[2]))):
+        runs = groups[key]
+
+        def mean(field, runs=runs):
+            values = [r[field] for r in runs if r.get(field) is not None]
+            return sum(values) / len(values) if values else None
+
+        def fmt(value, digits):
+            return '-' if value is None else '{:.{}f}'.format(value, digits)
+        rows.append([key[0], key[1], key[2], str(len(runs)), fmt(mean('slam_ate_m'), 3),
+                     fmt(mean('map_precision'), 3), fmt(mean('map_recall'), 3),
+                     fmt(mean('ghost_cells'), 1), fmt(mean('mover_ghost_cells'), 1)])
+    return header, rows
+
+
 def build_report(directory, out):
     """Write report.md, cells.csv, pairs.csv and the plots; return the report's path."""
     records = ex.parse_index(directory)
@@ -184,6 +212,10 @@ def build_report(directory, out):
               ex.markdown_table(pair_header, pair_rows) if pair_rows else 'No pairs.\n', '']
     lines += ['## Pooled over scenarios', '',
               ex.markdown_table(pair_header, pooled_rows) if pooled_rows else 'No pairs.\n', '']
+    slam_header, slam_table = slam_rows(records)
+    if slam_table:
+        lines += ['## SLAM: trajectory and map quality (means of the valid runs)', '',
+                  ex.markdown_table(slam_header, slam_table), '']
     lines += ['## Excluded runs', '',
               ex.markdown_table(excl_header, excl_rows) if excl_rows else 'None.\n', '']
     lines += ['## Plots', '']

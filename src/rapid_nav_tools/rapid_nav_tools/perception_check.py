@@ -2,7 +2,7 @@
 Check the optical flow pipeline on the simulated robot and write a bundle.
 
 Start the simulation with the flow node (ros2 launch rapid_nav_bringup sim.launch.py
-perception:=true), then run:
+stack:=perception), then run:
 
 ros2 run rapid_nav_tools perception_check [--out DIR] [--profile native|docker] [--no-drive]
 

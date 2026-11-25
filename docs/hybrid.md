@@ -11,7 +11,8 @@ changes the behaviour continuously, in three places:
 3. **Speed governor.** On top of Nav2's plan (deliberative), a time-to-collision check limits the speed (reactive):
    the closer and the more uncertain an approaching obstacle, the slower the robot may drive.
 
-`hazards:=off|oracle|oracle_static|flow` are unchanged.
+The navigation stack builds its map online with SLAM, and with `scan_filter:=true` the fused tracks also clean the
+scan that SLAM maps; see [slam.md](slam.md).
 
 ## 1. Camera reliability and lidar–camera fusion
 
@@ -28,7 +29,7 @@ positions of the cluster's `n` samples. The tracker does this only with its para
 fused launch sets; it then publishes on `/obstacles/flow`.
 
 **Lidar clusters.** `fusion_node` moves each `/scan` into `map` with TF at the scan stamp, drops the points within
-0.15 m of an occupied cell of the static map (`/map`), links the rest when closer than 0.15 m and keeps groups of at
+0.15 m of an occupied cell of the map (`/map`, which SLAM builds; unknown cells count as static too), links the rest when closer than 0.15 m and keeps groups of at
 least 3 points. A cluster gives a centre (mean) and a radius.
 
 **The filter.** One constant-velocity Kalman filter per obstacle, state `[x, y, vx, vy]`, white-acceleration process
@@ -78,10 +79,13 @@ The node logs the simulated seconds spent under a limit (`limited_s`) and the lo
 | node | parameter | default | meaning |
 |---|---|---|---|
 | `flow_tracker` | `uncertainty` | `false` | publish confidence = r and the sigmas (the fused launch sets true) |
+| `flow_tracker` | `tf_listener_node` | `shared` | `dedicated`: the TF listener gets its own node (the navigation stack sets it; see [slam.md](slam.md)) |
 | `fusion_node` | `link`, `min_points`, `static_clearance` | `0.15`, `3`, `0.15` | lidar clustering (m, points, m) |
 | `fusion_node` | `q`, `lidar_sigma`, `init_velocity_sigma` | `0.5`, `0.05`, `1.0` | filter noise |
 | `fusion_node` | `gate`, `confirm`, `max_age` | `9.21`, `3`, `1.0` | association and track life |
 | `fusion_node` | `rate`, `max_range` | `10.0`, `8.0` | publish rate (Hz), longest scan range used (m) |
+| `fusion_node` | `map_mode`, `track_guard` | `fixed`, `false` | `slam`: the map grows, unknown cells are static; the guard keeps points near confirmed moving tracks (the navigation stack sets both, see [slam.md](slam.md)) |
+| `fusion_node` | `guard_min_speed`, `guard_extra` | `0.2`, `0.15` | the guard's tracks (m/s) and the margin around their radius (m) |
 | `ttc_governor` | `horizon_s`, `min_limit`, `rise_per_s` | `3.0`, `0.2`, `0.2` | TTC horizon, floor, rise rate |
 | `ttc_governor` | `robot_radius`, `max_age_s`, `odom_topic` | `0.25`, `0.5`, `/odom` | robot, track age limit, odometry |
 
@@ -90,7 +94,8 @@ The hazard layer has no new parameter: it uses the risk cost whenever a track ca
 ## Running it
 
 ```bash
-ros2 launch rapid_nav_bringup sim.launch.py navigation:=true scenario:=crossing hazards:=fused rtf:=0.25
+ros2 launch rapid_nav_bringup sim.launch.py stack:=navigation scenario:=crossing hazards:=fused rtf:=0.25 \
+    controller:=dwb
 ros2 run rapid_nav_tools nav_run --scenario crossing --controller dwb --hazards fused
 ```
 
@@ -99,16 +104,19 @@ In Docker:
 ```bash
 scripts/dev.sh nav-smoke crossing dwb fused --rtf 0.25
 scripts/dev.sh nav-smoke crossing dwb fused --rtf 0.25 --no-governor
-scripts/dev.sh experiment m3
+scripts/dev.sh experiment m4
 ```
 
 The simulation runs at a quarter of real time for the same reason as with `hazards:=flow` (the flow network).
 
 ## The ablation
 
-- `flow` against `off`: the camera source alone, as in M2.
+- `flow` against `off`: the camera source alone.
 - `fused` against `flow`: what the lidar, the filter and the risk cost add.
 - `fused` with `governor:=false` (`--no-governor`) against `fused`: what the reactive speed limit adds.
+- `fused` with `scan_filter:=true` against `fused`: what keeping the tracked people out of the SLAM map adds
+  ([slam.md](slam.md)).
 
-The matrix `m3` (`src/rapid_nav_tools/config/experiments/m3.yaml`) runs crossing, head_on and crowd with dwb and
-`off`, `flow`, `fused`, three repeats each, at RTF 0.25. The governor ablation runs are separate `nav-smoke` calls.
+The matrix `m4` (`src/rapid_nav_tools/config/experiments/m4.yaml`) runs crossing, head_on and crowd with dwb and
+`off`, `fused`, `fused_filter`, three repeats each, at RTF 0.25. Other comparisons are separate `nav-smoke` calls or a
+matrix file of your own.

@@ -32,20 +32,23 @@ usage: scripts/dev.sh <command>
                   --sim the simulation with AMCL (arena only); the bundle goes to
                   planner_check_docker_<map>_<time>/
   nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static|flow|fused] [--rtf <x>] [--no-governor]
-                  navigation stack in the simulation + nav_run (goal runs scored on ground truth,
+            [--scan-filter]
+                  navigation stack (SLAM: the map is built online) in the simulation + nav_run (goal runs scored on ground truth,
                   against the moving obstacles of the crossing, head_on and crowd scenarios);
                   the optional third word starts the hazard layer with the true obstacle velocities
                   (oracle), positions only (oracle_static), the camera's RAFT flow (flow) or lidar and
                   camera fused with uncertainty plus the speed governor (fused); default off;
                   --no-governor runs fused without the governor (the bundle name gains _nogov); the bundle goes to
-                  nav_run_<scenario>_<controller>[_<hazards>][_nogov]_<time>/
+                  nav_run_<scenario>_<controller>[_<hazards>][_filter][_nogov]_<time>/;
+                  --scan-filter (with fused) removes the fused tracks from the scan SLAM maps;
+                  nav_run also scores the SLAM trajectory and the final map
                   (--rtf <x>, or the RTF environment variable, sets the simulation's target real-time
                   factor; default 1.0, nothing changed)
   track-smoke <crossing|head_on|crowd> [--rtf <x>]
                   the camera-based hazards (RAFT flow + flow_tracker) in the simulation with the dwb
                   controller; track_check scores the flow tracks against the obstacles' true poses;
                   the bundle goes to track_check_<scenario>_<time>/ (the goal run's own bundle in it)
-  experiment <matrix.yaml|pilot|m1|m2|m3>
+  experiment <matrix.yaml|m4>
                   run an experiment matrix (every run in a fresh simulation, resumable: run the same
                   command again after an interruption); the bundles and index.csv go to
                   experiments/<name>/; Ctrl+C or a STOP file there ends it after the current run
@@ -125,7 +128,7 @@ case "${1:-}" in
         esac
         # Start the headless simulation, wait up to 90 s for /clock, run sim_check into the bundle,
         # copy the launch log into it, stop the simulation and exit with sim_check's code.
-        smoke_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false$odom_arg > /ws/smoke_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools sim_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/smoke_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
+        smoke_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py stack:=sim headless:=true$odom_arg > /ws/smoke_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools sim_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/smoke_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$smoke_cmd"
         ;;
     perception-smoke)
@@ -141,7 +144,7 @@ case "${1:-}" in
         # Start the headless simulation with the flow node, wait up to 90 s for /clock, run
         # perception_check into the bundle, copy the launch log into it, stop the simulation and
         # exit with the check's code.
-        perception_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false perception:=true flow_backend:=$backend rtf:=$RTF > /ws/perception_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools perception_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/perception_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
+        perception_cmd="mkdir -p $bundle; ros2 launch rapid_nav_bringup sim.launch.py headless:=true stack:=perception flow_backend:=$backend rtf:=$RTF > /ws/perception_launch.log 2>&1 & launch_pid=\$!; ready=0; for i in \$(seq 1 90); do if timeout 10 ros2 topic echo --once /clock --no-daemon > /dev/null 2>&1; then ready=1; break; fi; sleep 1; done; if [ \$ready -eq 1 ]; then ros2 run rapid_nav_tools perception_check --profile docker --out $bundle$(quoted ${1+"$@"}); rc=\$?; else echo 'no /clock within 90 s' >&2; rc=1; fi; cp /ws/perception_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$perception_cmd"
         ;;
     planner-smoke)
@@ -162,7 +165,7 @@ case "${1:-}" in
                 exit 2
             fi
             bundle="/repo/planner_check_docker_arena_$stamp"
-            launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false planning:=true"
+            launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true stack:=planning"
             check_cmd="ros2 run rapid_nav_tools planner_check --mode sim --map arena --profile docker --out $bundle"
         else
             bundle="/repo/planner_check_docker_${map}_$stamp"
@@ -178,13 +181,16 @@ case "${1:-}" in
         shift
         extract_rtf ${1+"$@"}
         governor=true
+        scan_filter=false
         words=()
         for word in ${REST[@]+"${REST[@]}"}; do
-            if [ "$word" = "--no-governor" ]; then governor=false; else words+=("$word"); fi
+            if [ "$word" = "--no-governor" ]; then governor=false
+            elif [ "$word" = "--scan-filter" ]; then scan_filter=true
+            else words+=("$word"); fi
         done
         set -- ${words[@]+"${words[@]}"}
         if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static|flow|fused] [--no-governor]" >&2
+            echo "usage: scripts/dev.sh nav-smoke <tour|unmapped|crossing|head_on|crowd> <dwa|dwb|rpp> [off|oracle|oracle_static|flow|fused] [--no-governor] [--scan-filter]" >&2
             exit 2
         fi
         scenario="$1"
@@ -197,6 +203,9 @@ case "${1:-}" in
         if [ "$governor" = "false" ] && [ "$hazards" != "fused" ]; then
             echo "nav-smoke: --no-governor needs the hazards fused" >&2; exit 2
         fi
+        if [ "$scan_filter" = "true" ] && [ "$hazards" != "fused" ]; then
+            echo "nav-smoke: --scan-filter needs the hazards fused" >&2; exit 2
+        fi
         case "$scenario" in
             tour|unmapped|crossing|head_on|crowd) ;;
             *) echo "nav-smoke: unknown scenario $scenario" >&2; exit 2 ;;
@@ -207,11 +216,13 @@ case "${1:-}" in
         esac
         stamp="$(date +%Y%m%d-%H%M%S)"
         tag=""
+        filter_check=""
         [ "$hazards" = "off" ] || tag="_$hazards"
+        if [ "$scan_filter" = "true" ]; then tag="${tag}_filter"; filter_check=" --scan-filter"; fi
         [ "$governor" = "true" ] || tag="${tag}_nogov"
         bundle="/repo/nav_run_${scenario}_${controller}${tag}_$stamp"
-        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=$controller scenario:=$scenario hazards:=$hazards governor:=$governor rtf:=$RTF"
-        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --hazards $hazards --profile docker --out $bundle"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true stack:=navigation controller:=$controller scenario:=$scenario hazards:=$hazards governor:=$governor scan_filter:=$scan_filter rtf:=$RTF"
+        check_cmd="ros2 run rapid_nav_tools nav_run --scenario $scenario --controller $controller --hazards $hazards$filter_check --profile docker --out $bundle"
         # Start the navigation stack in the background, run nav_run (it waits for the clock and the
         # navigation action server), copy the launch log into the bundle, stop the stack and exit
         # with nav_run's code.
@@ -233,7 +244,7 @@ case "${1:-}" in
         esac
         stamp="$(date +%Y%m%d-%H%M%S)"
         bundle="/repo/track_check_${scenario}_$stamp"
-        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true rviz:=false navigation:=true controller:=dwb scenario:=$scenario hazards:=flow rtf:=$RTF"
+        launch_cmd="ros2 launch rapid_nav_bringup sim.launch.py headless:=true stack:=navigation controller:=dwb scenario:=$scenario hazards:=flow rtf:=$RTF"
         # The recorder listens while nav_run drives the goals; the stop file ends the recording.
         smoke_cmd="mkdir -p $bundle; rm -f /ws/track_stop; $launch_cmd > /ws/track_launch.log 2>&1 & launch_pid=\$!; ros2 run rapid_nav_tools track_check --scenario $scenario --out $bundle --stop-file /ws/track_stop > $bundle/track_check.log 2>&1 & check_pid=\$!; ros2 run rapid_nav_tools nav_run --scenario $scenario --controller dwb --hazards flow --profile docker --out $bundle/nav_run > $bundle/nav_run.log 2>&1; rc=\$?; sleep 5; touch /ws/track_stop; wait \$check_pid; cp /ws/track_launch.log $bundle/; kill -INT \$launch_pid 2>/dev/null; sleep 10; exit \$rc"
         in_container "$smoke_cmd"
