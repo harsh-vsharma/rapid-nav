@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-ament-cmake-gtest \
         ros-${ROS_DISTRO}-ament-cmake-cpplint \
         ros-${ROS_DISTRO}-ament-cmake-lint-cmake \
+        ros-${ROS_DISTRO}-nav2-common \
         ros-${ROS_DISTRO}-nav2-core \
         ros-${ROS_DISTRO}-nav2-util \
         ros-${ROS_DISTRO}-nav2-msgs \
