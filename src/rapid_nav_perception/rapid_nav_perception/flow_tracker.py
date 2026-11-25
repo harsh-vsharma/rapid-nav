@@ -5,6 +5,11 @@ For each FlowFrame the node removes the robot's own motion (depth at both times 
 from TF at both times, see egomotion.py), groups the samples that still move into obstacles on the
 floor and tracks them over time (tracking.py). It reads only the camera stream and TF: no ground
 truth.
+
+With the parameter `uncertainty` true (the fused hazard source) each track also carries the
+reliability r of its latest frame as its confidence, and a position and velocity sigma from the
+spread of its cluster scaled by 1 / r (tracking.frame_reliability, tracking.track_sigmas). With
+false (the default) the tracks are published exactly as before, sigmas 0.
 """
 
 import collections
@@ -17,7 +22,7 @@ from rapid_nav_msgs.msg import FlowFrame, TrackedObstacle, TrackedObstacleArray
 from rapid_nav_perception.conversions import image_to_array
 from rapid_nav_perception.egomotion import (
     block_texture, depth_speed_floor, moving_mask, sample_points, texture_mask, world_velocities)
-from rapid_nav_perception.tracking import cluster, Tracker
+from rapid_nav_perception.tracking import cluster, frame_reliability, track_sigmas, Tracker
 import rclpy
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -67,6 +72,8 @@ class FlowTracker(Node):
             self.declare_parameter(name, value)
         self.declare_parameter('target_frame', 'map')
         self.declare_parameter('topic', '/obstacles/tracked')
+        self.declare_parameter('uncertainty', False)
+        self.uncertainty = bool(self.get_parameter('uncertainty').value)
         self.p = {name: self.get_parameter(name).value for name in self.DEFAULTS}
         self.target = self.get_parameter('target_frame').value
         self.tracker = Tracker(self.p['gate'], self.p['alpha'], self.p['max_track_age'],
@@ -82,6 +89,7 @@ class FlowTracker(Node):
                 Image, '/camera/image', self.on_image, qos_profile_sensor_data)
         self.counts = {'frames': 0, 'used': 0, 'no_tf': 0, 'bad_dt': 0, 'few': 0, 'no_image': 0}
         self.moving_samples = 0
+        self.reliability = 1.0
         self.last_report = time.monotonic()
 
     def pose(self, frame, stamp):
@@ -138,6 +146,7 @@ class FlowTracker(Node):
         pix, x0, x1 = sample_points(
             flow, image_to_array(msg.previous_depth), image_to_array(msg.depth),
             (k[0], k[4], k[2], k[5]), int(p['stride']), p['min_depth'], p['max_depth'], block)
+        total = x0.shape[0]
         if p['min_texture'] > 0.0:
             # Where the previous image has no texture in two directions the flow is a guess.
             tile = block if block > 1 else int(p['stride'])
@@ -147,6 +156,7 @@ class FlowTracker(Node):
                 return
             keep = texture_mask(pix, texture, tile, p['min_texture'])
             x0, x1 = x0[keep], x1[keep]
+        self.reliability = frame_reliability(msg.backend, x0.shape[0], total)
         self.counts['used'] += 1
         if x0.shape[0] == 0:
             self.counts['few'] += 1
@@ -162,6 +172,10 @@ class FlowTracker(Node):
             clusters = cluster(w1[mask, :2], w[mask, :2], p['cell'], int(p['min_samples']))
             # Depth noise gives random velocities; a real mover has a mean velocity of its own.
             clusters = [c for c in clusters if math.hypot(c['vx'], c['vy']) >= p['min_speed']]
+        if self.uncertainty:
+            for c in clusters:
+                c['position_sigma'], c['velocity_sigma'] = track_sigmas(c, self.reliability)
+                c['reliability'] = self.reliability
         self.tracker.update(clusters, t1)
         self.publish(s1, t1)
         self.report()
@@ -179,6 +193,10 @@ class FlowTracker(Node):
             o.velocity.x, o.velocity.y = tr['vx'], tr['vy']
             o.radius = tr['radius']
             o.confidence = float(tr['confidence'])
+            if self.uncertainty:
+                o.confidence = float(tr.get('reliability', self.reliability))
+                o.position_sigma = float(tr.get('position_sigma', 0.0))
+                o.velocity_sigma = float(tr.get('velocity_sigma', 0.0))
             out.obstacles.append(o)
         self.pub.publish(out)
 
@@ -191,9 +209,9 @@ class FlowTracker(Node):
         c = self.counts
         self.get_logger().info(
             'flow_tracker: frames={} used={} skipped_no_tf={} skipped_bad_dt={} '
-            'no_image={} no_samples={} moving_samples={} tracks={}'.format(
+            'no_image={} no_samples={} moving_samples={} reliability={:.2f} tracks={}'.format(
                 c['frames'], c['used'], c['no_tf'], c['bad_dt'], c['no_image'], c['few'],
-                self.moving_samples,
+                self.moving_samples, self.reliability,
                 len(self.tracker.confirmed())))
 
 

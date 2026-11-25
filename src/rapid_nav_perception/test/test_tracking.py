@@ -1,7 +1,10 @@
 """Tests of rapid_nav_perception.tracking."""
 
+import math
+
 import numpy as np
-from rapid_nav_perception.tracking import cluster, Tracker
+from rapid_nav_perception.tracking import (
+    backend_factor, cluster, frame_reliability, track_sigmas, Tracker)
 
 
 def blob(cx, cy, n=60, spread=0.1, v=(0.5, 0.0), seed=0):
@@ -82,3 +85,53 @@ def test_crossing_tracks_keep_their_ids():
     final = {round(g['vx']): g['id'] for g in tr.confirmed(5.5)}
     assert final[1] == ids[0] and final[0] == ids[-2] or len(final) == 2
     assert len({g['id'] for g in tr.confirmed(5.5)}) == 2
+
+
+def test_backend_factors_follow_the_frame_route_names():
+    assert backend_factor('raft_small') == 1.0
+    assert backend_factor('raft_large') == 1.0
+    assert backend_factor('frame_route:searaft') == 1.0
+    assert backend_factor('frame_route:flownets') == 0.6
+    assert backend_factor('farneback') == 0.4
+    assert backend_factor('something_else') == 0.4
+
+
+def test_frame_reliability_is_factor_times_texture_share_in_0_1():
+    assert frame_reliability('raft_small', 80, 100) == 0.8
+    assert abs(frame_reliability('frame_route:flownets', 50, 100) - 0.3) < 1e-12
+    assert frame_reliability('raft_small', 0, 0) == 1.0
+    r = frame_reliability('farneback', 0, 100)
+    assert 0.0 < r <= 0.01
+
+
+def test_cluster_spreads_and_track_sigmas():
+    xy, v = blob(0.0, 0.0, n=100, spread=0.1, v=(0.5, 0.0))
+    v = v + np.random.RandomState(3).normal(0.0, 0.2, v.shape)
+    out = cluster(xy, v, 0.10, 6)
+    assert len(out) == 1
+    c0 = out[0]
+    # Uniform on [-0.1, 0.1]: standard deviation 0.1 / sqrt(3) = 0.058 per axis.
+    assert abs(c0['pos_spread'] - 0.058) < 0.01
+    assert abs(c0['vel_spread'] - 0.2) < 0.04
+    pos, vel = track_sigmas(c0, 1.0)
+    assert pos == max(0.05, c0['pos_spread'])
+    assert abs(vel - max(0.05, c0['vel_spread'] / math.sqrt(100))) < 1e-12
+    # A less reliable frame gives a larger velocity sigma, the position sigma does not change.
+    pos_low, vel_low = track_sigmas(c0, 0.4)
+    assert pos_low == pos and abs(vel_low - vel / 0.4) < 1e-12
+    # Floors: a perfect cluster still has 0.05.
+    assert track_sigmas({'n': 50, 'pos_spread': 0.0, 'vel_spread': 0.0}, 1.0) == (0.05, 0.05)
+
+
+def test_tracker_carries_the_sigmas_of_the_latest_cluster():
+    tr = Tracker(confirm=2)
+    a = dict(c(0.0, 0.0, 0.5, 0.0), position_sigma=0.1, velocity_sigma=0.4, reliability=0.5)
+    tr.update([a], 0.0)
+    b = dict(c(0.05, 0.0, 0.5, 0.0), position_sigma=0.06, velocity_sigma=0.1, reliability=1.0)
+    tr.update([b], 0.1)
+    (track,) = tr.confirmed(0.1)
+    assert track['position_sigma'] == 0.06 and track['velocity_sigma'] == 0.1
+    assert track['reliability'] == 1.0
+    plain = Tracker(confirm=1)
+    plain.update([c(0.0, 0.0, 0.5, 0.0)], 0.0)
+    assert 'velocity_sigma' not in plain.confirmed(0.0)[0]
