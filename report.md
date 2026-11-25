@@ -57,6 +57,31 @@ saw Sintel. They were **not** measured inside RAPID-NAV; see "Not verified" belo
 At native 1024x436 the same method gave EPE 1.88 at 679 ms per pair, against 1.62 at 1048 ms for SEA-RAFT-S on every
 frame. A crop-based third tier was tested there and gave no gain, so it was left out.
 
+### At 320x240, RAPID-NAV's processing size
+
+Same 54 Sintel pairs, resized to 320x240, same CPU and checkpoint. All rows are from one run. This checks the
+threshold scaling: 10 px at 640x480 was halved to the 5 px default.
+
+| Method | EPE (px) | ms mean | ms median | ms p95 | to SEA-RAFT |
+|---|---|---|---|---|---|
+| FlowNetS alone | 3.34 | 50 | – | – | 0% |
+| **frame routing, recheck, 5 px (default)** | **1.36** | **80** | 54 | 167 | 39% |
+| frame routing, recheck, 7.5 px / 10 px | 1.36 | 79 | 51 | 166 | 39% |
+| frame routing, recheck, 3 px | 1.19 | 88 | 103 | 171 | 54% |
+| SEA-RAFT-S warm, 2 it, every frame | 0.99 | 113 | – | – | 100% |
+
+- **5 px is a safe default.** At 5, 7.5 and 10 px, the router sends exactly the same frames to SEA-RAFT on this
+  data, so the result does not hinge on the exact value. The small time differences are timing noise.
+- **3 px is the accuracy option.** It also sends `temple_2` (medium motion spread over the whole frame) to
+  SEA-RAFT. That cuts its error from 1.41 to 0.38 px and the mean EPE from 1.36 to 1.19, for 8 ms more per pair on
+  average, but the median rises from 54 to 103 ms. Set `route_disp_px:=3.0` if medium motion matters more than
+  rate.
+- **The speed gain is smaller at this size.** Routing is 1.4x faster than SEA-RAFT on every frame here, against
+  1.75x at 640x480. SEA-RAFT's cost falls faster with image size than FlowNetS's does (its correlation volume
+  grows with the square of the pixel count). On a GPU the ratio changes again.
+- Sintel's motion is not the robot's. How often the robot's frames count as fast still has to be measured in the
+  simulation.
+
 ## Changes, file by file
 
 ### New files
@@ -125,7 +150,7 @@ The vendored modules keep their **layer names unchanged**, so the released check
 | Package tests, Python with PyTorch and both checkpoints | 49 passed, including the end-to-end test: a (+3, −2) px shift recovered within 0.5 px by SEA-RAFT (first pair) and by FlowNetS (second pair) |
 | Equivalence with the source project | Same frames (alley_2 and ambush_2, 4 pairs each, 320x240) through the original router and this port: identical flow (max difference 0.0) and the same route on every pair |
 | `colcon build --packages-select rapid_nav_perception` | builds; `nets/` and `nets/searaft/` are installed |
-| GitHub Actions CI (full workspace `colcon build` and `colcon test`, rosdep-installed dependencies) | passed on the same code (run 45535454222, from the earlier branch `feature/frame-routing-flow`) |
+| GitHub Actions CI (full workspace `colcon build` and `colcon test`, rosdep-installed dependencies) | passed (run 45536760911) |
 
 Tests added in `test/test_frame_route.py`:
 
@@ -143,12 +168,12 @@ Tests added in `test/test_frame_route.py`:
   `ros-jazzy-rosidl-default-generators`, so `rapid_nav_msgs` (and the `FlowFrame` message the node publishes) could
   not be built there. The node's code path was therefore not run end to end in ROS. CI builds the whole workspace.
   The next step is a run with `flow_backend:=frame_route` and the S2 perception checks (`perception_check`).
-- **Not timed at 320x240 inside RAPID-NAV.** The latencies above come from the source project at 640x480. At
-  320x240 both networks should be faster, but the share of fast frames depends on the scenarios and the robot's
-  speed. Measure it with `perception_check` and the `latency_ms` field.
-- **The 5 px threshold was scaled, not tuned.** The robot's own motion (turning in place in particular) makes the
-  whole image move. Check how often frames go to SEA-RAFT while the robot drives, and tune `route_disp_px` and
-  `route_frac` if FlowNetS is rarely used.
+- **Not timed inside RAPID-NAV.** The 320x240 numbers above are from Sintel on the source project's benchmark,
+  not from the simulation, where the simulator shares the CPU. Measure it with `perception_check` and the
+  `latency_ms` field.
+- **The 5 px threshold was checked on Sintel, not on the robot.** The robot's own motion (turning in place in
+  particular) makes the whole image move. Check how often frames go to SEA-RAFT while the robot drives, and tune
+  `route_disp_px` and `route_frac` if FlowNetS is rarely used.
 - **Velocity noise.** The tracker turns flow error into velocity error in proportion to depth and frame rate. Check
   the tracker's false tracks with `frame_route` before using it with `hazards:=flow`.
 
