@@ -44,7 +44,7 @@ class FrameRouter:
     and its flow was replaced (motion onset).
     """
 
-    def __init__(self, flownet, stream, disp_px=5.0, frac=0.3, step=4):
+    def __init__(self, flownet, stream, disp_px=10.0, frac=0.3, step=4):
         """Keep the two flows and the gate settings; the first pair goes to SEA-RAFT."""
         self.flownet = flownet
         self.stream = stream
@@ -112,7 +112,7 @@ class FrameRouteFlow(FlowBackend):
     name = 'frame_route'
 
     def __init__(self, device, flownet_weights='', searaft_weights=DEFAULT_SEARAFT,
-                 disp_px=5.0, frac=0.3, stream_iters=2, key_iters=4, num_threads=0):
+                 disp_px=10.0, frac=0.3, stream_iters=2, key_iters=4, num_threads=0):
         """Load both networks; flownet_weights '' means DEFAULT_FLOWNETS."""
         from rapid_nav_perception.nets.flownets import load_flownets
         from rapid_nav_perception.searaft import load_searaft, StreamingSeaRaft

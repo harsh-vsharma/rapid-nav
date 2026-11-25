@@ -276,7 +276,7 @@ S1 robot as well. About 15 minutes.
    ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=farneback
    ```
 
-   The terminal prints a line `flow_node: backend=farneback device=cpu size=320x240 torch=...`. In RViz the image
+   The terminal prints a line `flow_node: backend=farneback device=cpu size=640x480 torch=...`. In RViz the image
    panel "Flow" shows the flow picture. Leave the launch running.
 3. **Teleoperate** in a second terminal (`ros2 run teleop_twist_keyboard teleop_twist_keyboard`) for about 30
    seconds: drive forward, then turn on the spot. Take a screenshot of RViz with the flow picture visible, as

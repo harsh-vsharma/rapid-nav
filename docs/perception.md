@@ -15,17 +15,18 @@ second frame: the depth image nearest in time to it (within 0.04 s) is attached,
 The flow node keeps only the newest pair waiting. A worker thread takes the newest pair, computes the flow and
 publishes the result. A slow backend therefore drops frames instead of building up a queue.
 
-The images are resized to a processing width of 320 pixels (the height follows the camera's aspect ratio, 240 for the
-640 × 480 camera). The flow is in pixels at that size. The camera intrinsics are scaled to the same size.
+The images are processed at a width of 640 pixels (the height follows the camera's aspect ratio: 480 for the
+640 × 480 camera, so its images are used at full size). A smaller `width` resizes them. The flow is in pixels at the
+processing size, and the camera intrinsics are scaled to the same size.
 
 ## Backends
 
-| backend | needs | typical latency, one 320 × 240 pair | notes |
+| backend | needs | typical latency, one 320 × 240 pair (measured before the default became 640 × 480; expect about 4x at 640 × 480) | notes |
 |---|---|---|---|
 | `farneback` | OpenCV (`python3-opencv`), nothing else | 10.6 ms (median; Docker on the Mac, CPU) | always available; the fallback and the backend of CI |
 | `raft_small` | PyTorch and torchvision, installed in a virtual environment; weights from torchvision | 221 ms (median; Docker on the Mac, CPU, 12 iterations) | the default |
 | `raft_large` | as `raft_small` | 624 ms (median; Docker on the Mac, CPU, 12 iterations) | slower and more accurate |
-| `frame_route` | PyTorch; the FlowNetS and SEA-RAFT-S checkpoints (see "The frame_route backend") | not measured at 320 × 240 yet; about 160 ms on calm frames and 600–900 ms on fast ones at 640 × 480 (CPU) | FlowNetS on calm frames, SEA-RAFT-S on fast ones |
+| `frame_route` | PyTorch; the FlowNetS and SEA-RAFT-S checkpoints (see "The frame_route backend") | 80 ms mean on Sintel at 320 × 240; at 640 × 480, about 160 ms on calm frames and 600–900 ms on fast ones (CPU, benchmark, not in the simulation) | FlowNetS on calm frames, SEA-RAFT-S on fast ones |
 
 The latencies are the time of the flow computation alone, measured with random images (T1 probe). In a running
 simulation the latency is higher, because the simulator and the flow share the CPU: in the S2 check on the Mac,
@@ -126,7 +127,7 @@ The defaults are in `config/perception.yaml`. The launch file exposes four of th
 |---|---|---|
 | `backend` | `raft_small` | `farneback`, `raft_small`, `raft_large` or `frame_route` |
 | `device` | `auto` | `auto` (CUDA when PyTorch sees a GPU, else CPU), `cpu` or `cuda` |
-| `width` | `320` | processing width in pixels; RAFT needs multiples of 8 and the node rounds down |
+| `width` | `640` | processing width in pixels (640: the camera's full size); RAFT needs multiples of 8 and the node rounds down |
 | `max_rate` | `10.0` | largest processing rate in Hz of wall-clock time (0: no limit) |
 | `max_pair_gap` | `0.2` | largest gap in simulated seconds between the two frames of a pair |
 | `depth_slop` | `0.04` | largest time difference in seconds between the current RGB frame and the depth image attached to it |
@@ -136,7 +137,7 @@ The defaults are in `config/perception.yaml`. The launch file exposes four of th
 | `publish_vis` | `true` | publish `/perception/flow_vis` |
 | `flownet_weights` | `''` | `frame_route`: FlowNetS checkpoint (`''`: `$RAPID_NAV_WEIGHTS/flownets/flownets_EPE1.951.pth.tar`) |
 | `searaft_weights` | `Tartan-C-T-TSKH432x960-S` | `frame_route`: SEA-RAFT checkpoint, a file or a checkpoint name (downloaded once) |
-| `route_disp_px` | `5.0` | `frame_route`: a pixel moving more than this (px at the processing size) is fast |
+| `route_disp_px` | `10.0` | `frame_route`: a pixel moving more than this (px at the processing size) is fast |
 | `route_frac` | `0.3` | `frame_route`: a frame with more than this share of fast pixels goes to SEA-RAFT |
 | `stream_iters` | `2` | `frame_route`: SEA-RAFT iterations per pair (warm start) |
 | `key_iters` | `4` | `frame_route`: SEA-RAFT iterations on the first pair of a stream |
@@ -152,8 +153,8 @@ and one status line every 5 s with the received, processed and dropped pairs, th
 our optical-flow study, ported here from that project.
 
 - A frame is fast when more than `route_frac` (0.3) of its pixels, sampled every 4 px, move more than
-  `route_disp_px`. The benchmark used 10 px at 640 × 480; the default 5 px is the same motion at the 320 px
-  processing width.
+  `route_disp_px` (10 px at the 640 × 480 processing size, the benchmark's setting). With a smaller `width`, scale
+  it down in proportion (5 px at 320 px).
 - While the scene is calm, each pair costs one FlowNetS pass and its own flow decides. When that flow shows fast
   motion, the same pair is re-run on SEA-RAFT (the "recheck"), so no fast frame keeps FlowNetS's flow.
 - While the scene is fast, each pair costs one SEA-RAFT pass, not both. SEA-RAFT runs as a stream: each frame goes
@@ -241,7 +242,7 @@ head -n 1 "$(ros2 pkg prefix rapid_nav_perception)/lib/rapid_nav_perception/flow
 The last line must print `#!/usr/bin/env python3`, so the flow node runs with the environment's Python.
 
 To confirm that RAFT is used, start the simulation with `perception:=true` and look for the startup line. It should read
-`flow_node: backend=raft_small device=cpu size=320x240 torch=2.x.y+cpu` (or `device=cuda` on a GPU). If the line reads
+`flow_node: backend=raft_small device=cpu size=640x480 torch=2.x.y+cpu` (or `device=cuda` on a GPU). If the line reads
 `backend=farneback torch=none`, PyTorch was not found: check that the environment is active in the shell that
 runs the launch file.
 

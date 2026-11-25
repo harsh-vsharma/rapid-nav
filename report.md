@@ -28,7 +28,7 @@ ros2 launch rapid_nav_bringup sim.launch.py perception:=true flow_backend:=frame
 The gate is called **recheck**. It is the most accurate gate in our study's comparison.
 
 1. **Fast frame.** A frame counts as fast when more than `route_frac` (0.3) of its pixels, sampled every 4 px, move
-   more than `route_disp_px` (5 px at the 320 px processing width).
+   more than `route_disp_px` (10 px at the 640x480 processing size, the benchmark's setting).
 2. **Calm scene.** Each pair costs one FlowNetS pass, and FlowNetS's own flow decides the route. If that flow shows
    fast motion (motion onset), the **same pair is re-run on SEA-RAFT**, so no fast frame keeps FlowNetS's flow.
 3. **Fast scene.** Each pair costs one SEA-RAFT pass, without FlowNetS. SEA-RAFT runs as a stream:
@@ -57,21 +57,23 @@ saw Sintel. They were **not** measured inside RAPID-NAV; see "Not verified" belo
 At native 1024x436 the same method gave EPE 1.88 at 679 ms per pair, against 1.62 at 1048 ms for SEA-RAFT-S on every
 frame. A crop-based third tier was tested there and gave no gain, so it was left out.
 
-### At 320x240, RAPID-NAV's processing size
+### At 320x240 (only relevant with `width:=320`)
 
-Same 54 Sintel pairs, resized to 320x240, same CPU and checkpoint. All rows are from one run. This checks the
-threshold scaling: 10 px at 640x480 was halved to the 5 px default.
+RAPID-NAV used to process at 320x240; the processing size is now the camera's full 640x480 (see "Processing
+resolution" below). This run is kept for anyone who sets `width:=320`: same 54 Sintel pairs, resized to 320x240,
+same CPU and checkpoint, all rows from one run.
 
 | Method | EPE (px) | ms mean | ms median | ms p95 | to SEA-RAFT |
 |---|---|---|---|---|---|
 | FlowNetS alone | 3.34 | 50 | – | – | 0% |
-| **frame routing, recheck, 5 px (default)** | **1.36** | **80** | 54 | 167 | 39% |
+| **frame routing, recheck, 5 px** | **1.36** | **80** | 54 | 167 | 39% |
 | frame routing, recheck, 7.5 px / 10 px | 1.36 | 79 | 51 | 166 | 39% |
 | frame routing, recheck, 3 px | 1.19 | 88 | 103 | 171 | 54% |
 | SEA-RAFT-S warm, 2 it, every frame | 0.99 | 113 | – | – | 100% |
 
-- **5 px is a safe default.** At 5, 7.5 and 10 px, the router sends exactly the same frames to SEA-RAFT on this
-  data, so the result does not hinge on the exact value. The small time differences are timing noise.
+- **At 320 px, use 5 px** (`route_disp_px:=5.0`, the 640x480 threshold halved). At 5, 7.5 and 10 px the router
+  sends exactly the same frames to SEA-RAFT on this data, so the result does not hinge on the exact value. The small
+  time differences are timing noise.
 - **3 px is the accuracy option.** It also sends `temple_2` (medium motion spread over the whole frame) to
   SEA-RAFT. That cuts its error from 1.41 to 0.38 px and the mean EPE from 1.36 to 1.19, for 8 ms more per pair on
   average, but the median rises from 54 to 103 ms. Set `route_disp_px:=3.0` if medium motion matters more than
@@ -120,9 +122,8 @@ The vendored modules keep their **layer names unchanged**, so the released check
 - **The router doesn't need PyTorch.** `FrameRouter` takes any two callables that return numpy flows. CI runs
   without PyTorch, so it still tests the routing logic, including the motion-onset re-run and the handback after
   fast motion, using stub flows.
-- **Threshold scaled to the processing size.** The benchmark used 10 px at 640x480. RAPID-NAV processes at 320 px
-  width, where the same motion is 5 px, so `route_disp_px` defaults to 5.0. It is a parameter, so it can be tuned
-  in the simulation.
+- **Threshold matches the processing size.** The flow node now processes at 640x480, the size of the benchmark,
+  so `route_disp_px` defaults to the benchmark's 10 px. With a smaller `width`, scale it in proportion.
 - **Weights are not in the repository.**
   - SEA-RAFT-S (36 MB) is downloaded from HuggingFace on first use, checked against its SHA-256, and cached in
     `$RAPID_NAV_WEIGHTS/searaft/` (default `~/.cache/rapid_nav`).
@@ -168,14 +169,66 @@ Tests added in `test/test_frame_route.py`:
   `ros-jazzy-rosidl-default-generators`, so `rapid_nav_msgs` (and the `FlowFrame` message the node publishes) could
   not be built there. The node's code path was therefore not run end to end in ROS. CI builds the whole workspace.
   The next step is a run with `flow_backend:=frame_route` and the S2 perception checks (`perception_check`).
-- **Not timed inside RAPID-NAV.** The 320x240 numbers above are from Sintel on the source project's benchmark,
-  not from the simulation, where the simulator shares the CPU. Measure it with `perception_check` and the
-  `latency_ms` field.
-- **The 5 px threshold was checked on Sintel, not on the robot.** The robot's own motion (turning in place in
+- **Not timed inside RAPID-NAV.** The numbers above are from Sintel on the source project's benchmark, not from
+  the simulation, where the simulator shares the CPU. Measure it with `perception_check` and the `latency_ms` field.
+- **The threshold was checked on Sintel, not on the robot.** The robot's own motion (turning in place in
   particular) makes the whole image move. Check how often frames go to SEA-RAFT while the robot drives, and tune
   `route_disp_px` and `route_frac` if FlowNetS is rarely used.
 - **Velocity noise.** The tracker turns flow error into velocity error in proportion to depth and frame rate. Check
   the tracker's false tracks with `frame_route` before using it with `hazards:=flow`.
+
+## Processing resolution: 640x480
+
+A later commit changes the flow node's processing size from 320x240 to the camera's full 640x480. That is the
+resolution our flow study benchmarked at, and the deployment target. It affects every backend, not only
+`frame_route`.
+
+| Where | Before | After |
+|---|---|---|
+| `flow_node.py` parameter `width`, `config/perception.yaml`, `perception.launch.py` argument `width` | 320 | 640 |
+| `route_disp_px` (node, config, `FrameRouter` and `FrameRouteFlow` defaults) | 5.0 | 10.0 |
+| `perception_check` expected flow size (an INFO line, not a pass/fail check) | 320x240 | 640x480 |
+| `docs/perception.md`, `docs/sim-checks.md` (processing size, startup line, parameter table) | 320x240 | 640x480 |
+
+The camera itself was already 640x480 at 30 Hz (`camera_width` and `camera_height` in the URDF), so nothing changes in
+Gazebo or the bridge. With `width` 640 the node no longer resizes the images, and the intrinsics are passed through
+unscaled.
+
+What to check before relying on it:
+
+- **Cost.** Every backend does about 4x the work per pair. The `raft_small` latency in `docs/perception.md` (221 ms
+  at 320x240) will be roughly 4x higher on a CPU, so the node processes fewer pairs per second and drops more. The
+  `hazards:=flow` setup (`rtf:=0.25`, 4 threads) was sized for 320x240 and may need a lower `rtf` or a GPU
+  (`flow_device:=cuda`). The latency table in `docs/perception.md` is still the old 320x240 measurement and says so.
+- **The tracker was tuned at 320x240.** `flow_tracker` reduces depth and flow to 4x4-pixel blocks (`depth_block`),
+  and its `min_texture` threshold (6.0) is a per-block structure-tensor eigenvalue. At 640x480 a block covers a
+  quarter of the scene area, and image gradients per pixel are smaller. Clusters get about 4x more points, so
+  `min_samples` (10) is easier to reach. Re-check the false-track rate (the S7 flow checks) and consider
+  `depth_block:=8` to keep the old block footprint.
+- `width:=320` (launch argument) restores the old behaviour for all backends; add `route_disp_px:=5.0` for
+  `frame_route`.
+
+## The pipeline, end to end
+
+Verified from the launch files, the bridge config and the node sources:
+
+1. **Gazebo** renders the robot's RGB-D camera (`rgbd_camera` sensor, 640x480, 30 Hz).
+2. **`ros_gz_bridge`** (`rapid_nav_gazebo/config/bridge.yaml`) brings `/camera/image`, `/camera/depth_image` and
+   `/camera/camera_info` from Gazebo to ROS (GZ_TO_ROS).
+3. **`flow_node`** pairs consecutive RGB frames, computes the flow with the chosen backend, attaches the depth for
+   both frames and publishes `rapid_nav_msgs/FlowFrame` on `/perception/flow_frame` (and the picture on
+   `/perception/flow_vis`). It runs with `perception:=true` or `hazards:=flow`.
+4. **`flow_tracker`** (only with `hazards:=flow`) back-projects the flow with depth, removes the robot's own motion
+   through TF (camera pose in `map` at each frame's time), clusters the moving points and publishes
+   `TrackedObstacleArray` on `/obstacles/tracked`.
+5. **`rapid_nav_hazard::HazardLayer`** in the Nav2 local and global costmaps (`navigation.yaml`) listens on
+   `/obstacles/tracked` and paints the obstacles' predicted positions as cost.
+6. **The controller** (our DWA by default, or DWB / RPP) plans around that cost and publishes `/cmd_vel`.
+7. **`ros_gz_bridge`** sends `/cmd_vel` back to Gazebo (ROS_TO_GZ), where the diff-drive plugin moves the robot.
+
+So the loop closes in Gazebo through the robot's motion, not through the flow itself. The flow and the tracks stay
+on the ROS side; only `/cmd_vel` goes back. The full loop runs with `navigation:=true hazards:=flow`. With
+`perception:=true` alone, the chain stops at step 3 (flow and picture only).
 
 ## Follow-ups
 
