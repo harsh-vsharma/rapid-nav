@@ -127,6 +127,9 @@ void HazardLayer::updateBounds(
           ob.vx = v.x();
           ob.vy = v.y();
           ob.radius = o.radius;
+          // Per-axis sigmas do not change under a rotation.
+          ob.position_sigma = o.position_sigma;
+          ob.velocity_sigma = o.velocity_sigma;
           obstacles.push_back(ob);
         }
         disks_ = predict_disks(obstacles, std::max(age, 0.0), params_);

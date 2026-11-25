@@ -20,7 +20,12 @@ struct Obstacle
   double vx = 0.0;
   double vy = 0.0;
   double radius = 0.0;
+  double position_sigma = 0.0;  // 1-sigma per axis (m); 0 with velocity_sigma 0: hard disks (S7)
+  double velocity_sigma = 0.0;  // 1-sigma per axis (m/s)
 };
+
+// The cost of a disk never reaches the inscribed value 253, whatever the parameters say.
+constexpr int kMaxHazardCost = 252;
 
 // Fixed for S7 (the spec's table); the layer declares them as ROS parameters with these defaults.
 struct HazardParams
@@ -35,13 +40,17 @@ struct HazardParams
   double max_age_s = 0.5;
 };
 
-// A predicted position: a disk with a cost.
+// A predicted position: a disk with a cost. With sigma > 0 the disk is uncertain: a cell at
+// distance d from the centre is occupied with probability P = Phi((radius - d) / sigma) and gets
+// cost round(peak P) (peak = max_cost w_k, the time weight w_k normalised to 1 at k = 0).
 struct Disk
 {
   double x = 0.0;
   double y = 0.0;
   double radius = 0.0;
   int cost = 0;
+  double sigma = 0.0;
+  double peak = 0.0;
 };
 
 struct GridSpec
@@ -71,16 +80,23 @@ struct BoundingBox
 
 // The disks of all obstacles: for k = 0 .. floor(horizon / step), centre p + v (age_s + k step),
 // radius + robot_radius + margin, cost round(max - (max - min) k step / horizon). An obstacle
-// slower than min_speed gets only k = 0, at p.
+// slower than min_speed gets only k = 0, at p. An obstacle with a sigma gives each disk
+// sigma_k = sqrt(position_sigma^2 + velocity_sigma^2 t_k^2), t_k = k step, and peak = the
+// unrounded cost.
 std::vector<Disk> predict_disks(
   const std::vector<Obstacle> & obstacles, double age_s, const HazardParams & params);
 
-// The world-coordinate box around all disks (empty when there are none).
+// The world-coordinate box around all disks, uncertain ones to radius + 3 sigma (empty when there
+// are none).
 BoundingBox bounding_box(const std::vector<Disk> & disks);
 
 // The cells whose centre lies in a disk, each with the maximum cost of the disks covering it.
-// Cells outside the grid are dropped.
+// Uncertain disks paint the cells to radius + 3 sigma with round(peak P) (cells below 1 skipped,
+// at most kMaxHazardCost). Cells outside the grid are dropped.
 std::vector<PaintedCell> rasterise(const std::vector<Disk> & disks, const GridSpec & grid);
+
+// The standard normal CDF.
+double normal_cdf(double z);
 
 }  // namespace rapid_nav_hazard
 
