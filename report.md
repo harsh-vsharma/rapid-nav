@@ -125,7 +125,7 @@ The vendored modules keep their **layer names unchanged**, so the released check
 | Package tests, Python with PyTorch and both checkpoints | 49 passed, including the end-to-end test: a (+3, −2) px shift recovered within 0.5 px by SEA-RAFT (first pair) and by FlowNetS (second pair) |
 | Equivalence with the source project | Same frames (alley_2 and ambush_2, 4 pairs each, 320x240) through the original router and this port: identical flow (max difference 0.0) and the same route on every pair |
 | `colcon build --packages-select rapid_nav_perception` | builds; `nets/` and `nets/searaft/` are installed |
-| GitHub Actions CI on this branch | runs on push; see the Actions tab for the result |
+| GitHub Actions CI on this branch (full workspace `colcon build` and `colcon test`, rosdep-installed dependencies) | passed (run 45535454222) |
 
 Tests added in `test/test_frame_route.py`:
 
