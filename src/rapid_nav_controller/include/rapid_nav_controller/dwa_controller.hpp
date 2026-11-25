@@ -17,11 +17,11 @@
 #include "nav2_core/controller.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "rapid_nav_controller/compat.hpp"
 #include "rapid_nav_controller/dwa_core.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
-#include "tf2_ros/buffer.h"
+#include "tf2_ros/buffer.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
 namespace rapid_nav_controller
@@ -34,28 +34,41 @@ public:
   ~DwaController() override = default;
 
   void configure(
-    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent, std::string name,
+    const compat::LifecycleNode::WeakPtr & parent, std::string name,
     std::shared_ptr<tf2_ros::Buffer> tf,
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
   void cleanup() override;
   void activate() override;
   void deactivate() override;
+#if RAPID_NAV_NAV2_ROS_COMMON
+  // Nav2 1.5: the controller server also passes its own transformed, pruned plan and the goal.
+  // This controller keeps following the full plan it received, as on Jazzy.
+  void newPathReceived(const nav_msgs::msg::Path & raw_global_path) override;
+  geometry_msgs::msg::TwistStamped computeVelocityCommands(
+    const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+    nav2_core::GoalChecker * goal_checker, const nav_msgs::msg::Path & transformed_global_plan,
+    const geometry_msgs::msg::PoseStamped & global_goal) override;
+#else
   void setPlan(const nav_msgs::msg::Path & path) override;
   geometry_msgs::msg::TwistStamped computeVelocityCommands(
     const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
     nav2_core::GoalChecker * goal_checker) override;
+#endif
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
 private:
-  void load_parameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node);
+  void set_plan(const nav_msgs::msg::Path & path);
+  geometry_msgs::msg::TwistStamped compute_velocity(
+    const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity);
+  void load_parameters(const compat::LifecycleNode::SharedPtr & node);
   double read_double(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+    const compat::LifecycleNode::SharedPtr & node, const std::string & key,
     double value) const;
   int read_int(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+    const compat::LifecycleNode::SharedPtr & node, const std::string & key,
     int value) const;
   bool read_bool(
-    const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+    const compat::LifecycleNode::SharedPtr & node, const std::string & key,
     bool value) const;
 
   // The global plan in the costmap's frame, one pose per point; false when a transform fails.
