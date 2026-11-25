@@ -37,6 +37,8 @@ import time
 from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from lifecycle_msgs.msg import State
+from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import Odometry, Path
 import numpy as np
@@ -313,6 +315,7 @@ class NavRun(Node):
         self.create_subscription(Twist, '/cmd_vel', self._on_cmd, 10)
         self.create_subscription(Path, '/plan', self._on_plan, 10)
         self.client = ActionClient(self, NavigateToPose, '/navigate_to_pose')
+        self.navigator_state = self.create_client(GetState, '/bt_navigator/get_state')
         self.goal_pub = self.create_publisher(Int32, '/scenario/goal', LATCHED)
         self.ready = False
         self.create_subscription(Bool, '/scenario/ready', self._on_ready, LATCHED)
@@ -400,6 +403,20 @@ class NavRun(Node):
                 return True
             rclpy.spin_once(self, timeout_sec=0.02)
         return predicate()
+
+    def navigator_active(self, timeout):
+        """Wait until bt_navigator is active; return the outcome."""
+        # Nav2 1.5 offers /navigate_to_pose before the lifecycle manager activates bt_navigator,
+        # and rejects goals until then; waiting for the action server alone is not enough there.
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if self.navigator_state.wait_for_service(timeout_sec=1.0):
+                future = self.navigator_state.call_async(GetState.Request())
+                if self.wait_until(future.done, 5.0) and future.result() is not None and \
+                        future.result().current_state.id == State.PRIMARY_STATE_ACTIVE:
+                    return True
+            self.wait_until(lambda: False, 0.5)
+        return False
 
     def sample(self):
         """Return the latest values of every topic, with the simulated time."""
@@ -738,6 +755,8 @@ def main(argv=None):
         if not node.client.wait_for_server(timeout_sec=SERVER_WAIT_S):
             raise RuntimeError('/navigate_to_pose is not available within {} s'.format(
                 SERVER_WAIT_S))
+        if not node.navigator_active(SERVER_WAIT_S):
+            raise RuntimeError('bt_navigator is not active within {} s'.format(SERVER_WAIT_S))
         if obstacles:
             node.record_obstacles([o['name'] for o in obstacles])
             if not node.wait_until(lambda: node.ready, READY_WAIT_S):
