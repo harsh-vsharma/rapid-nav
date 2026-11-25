@@ -66,6 +66,9 @@ class OracleObstacles(Node):
                     (q.x, q.y, q.z, q.w), (t.x, t.y, t.z))
             entry.radius = covering_radius(obstacle['shape'])
             entry.confidence = 1.0
+            # Ground truth: no uncertainty (0 keeps the hazard layer's fixed cost band).
+            entry.position_sigma = 0.0
+            entry.velocity_sigma = 0.0
             out.obstacles.append(entry)
         out.header.stamp.sec = newest // 10 ** 9 if newest else now // 10 ** 9
         out.header.stamp.nanosec = newest % 10 ** 9 if newest else now % 10 ** 9
