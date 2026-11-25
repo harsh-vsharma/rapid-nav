@@ -16,13 +16,19 @@ natively instead (see [setup.md](setup.md)).
 
 The build happens in a Docker volume, so the repository's own `build/` and `install/` are not touched.
 
+`ROS_DISTRO=lyrical` in front of any command uses the Lyrical setup instead: the image `rapid-nav-dev:lyrical`
+(Ubuntu 26.04, Gazebo Jetty, Nav2 1.5) and its own volume, e.g. `ROS_DISTRO=lyrical scripts/dev.sh test`.
+`INSTALL_TORCH=0 scripts/dev.sh image` builds an image without PyTorch; the flow node then falls back to
+Farnebäck.
+
 The build uses at most two compile jobs (`MAKEFLAGS=-j2`, `--parallel-workers 2`): the C++ planner includes the
 Nav2 headers, and one translation unit of that kind takes about 1 GB, while the Docker VM has about 4.8 GiB.
 
 ## PyTorch in the image
 
 The image has PyTorch (CPU wheels) and torchvision in a virtual environment at `/opt/venv`. The environment is created
-with `--system-site-packages`, so ROS and the system numpy 1.x stay visible, and `/opt/venv/bin` is first on `PATH`.
+with `--system-site-packages`, so ROS and the system numpy (1.x on Jazzy, 2.x on Lyrical) stay visible, and
+`/opt/venv/bin` is first on `PATH`.
 The RAFT weights are fetched at image build time, so runs need no network. `colcon build` and `colcon test` run with
 the system Python (`/usr/bin/python3`), where PyTorch is absent; the RAFT tests skip there.
 

@@ -60,9 +60,8 @@ See [docs/architecture.md](docs/architecture.md) for the design.
 
 ## Requirements
 
-- Ubuntu 24.04
-- ROS 2 Jazzy
-- Gazebo Harmonic (`ros-jazzy-ros-gz`)
+- Ubuntu 24.04, ROS 2 Jazzy, Gazebo Harmonic (`ros-jazzy-ros-gz`): the primary setup
+- or Ubuntu 26.04, ROS 2 Lyrical, Gazebo Jetty (`ros-lyrical-ros-gz`): supported
 
 The full steps are in [docs/setup.md](docs/setup.md).
 
