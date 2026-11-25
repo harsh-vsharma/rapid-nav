@@ -15,8 +15,9 @@ second frame: the depth image nearest in time to it (within 0.04 s) is attached,
 The flow node keeps only the newest pair waiting. A worker thread takes the newest pair, computes the flow and
 publishes the result. A slow backend therefore drops frames instead of building up a queue.
 
-The images are processed at a width of 640 pixels (the height follows the camera's aspect ratio: 480 for the
-640 × 480 camera, so its images are used at full size). A smaller `width` resizes them. The flow is in pixels at the
+The images are processed at a width of 320 pixels by default (the height follows the camera's aspect ratio: 240 for
+the 640 × 480 camera); `width:=640` uses them at full size, which `frame_route` expects and which makes RAFT about
+4x slower. The camera tracker's settings are tuned at 320. The flow is in pixels at the
 processing size, and the camera intrinsics are scaled to the same size.
 
 ## Backends
@@ -127,7 +128,7 @@ The defaults are in `config/perception.yaml`. The launch file exposes four of th
 |---|---|---|
 | `backend` | `raft_small` | `farneback`, `raft_small`, `raft_large` or `frame_route` |
 | `device` | `auto` | `auto` (CUDA when PyTorch sees a GPU, else CPU), `cpu` or `cuda` |
-| `width` | `640` | processing width in pixels (640: the camera's full size); RAFT needs multiples of 8 and the node rounds down |
+| `width` | `320` | processing width in pixels (640: the camera's full size, for `frame_route`); RAFT needs multiples of 8 and the node rounds down |
 | `max_rate` | `10.0` | largest processing rate in Hz of wall-clock time (0: no limit) |
 | `max_pair_gap` | `0.2` | largest gap in simulated seconds between the two frames of a pair |
 | `depth_slop` | `0.04` | largest time difference in seconds between the current RGB frame and the depth image attached to it |

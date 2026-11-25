@@ -44,7 +44,7 @@ class FlowNode(Node):
         super().__init__('flow_node')
         self.declare_parameter('backend', 'raft_small')
         self.declare_parameter('device', 'auto')
-        self.declare_parameter('width', 640)
+        self.declare_parameter('width', 320)
         self.declare_parameter('max_rate', 10.0)
         self.declare_parameter('max_pair_gap', 0.2)
         self.declare_parameter('depth_slop', 0.04)

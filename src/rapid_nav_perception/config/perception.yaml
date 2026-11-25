@@ -3,7 +3,7 @@ flow_node:
     use_sim_time: true
     backend: raft_small
     device: auto
-    width: 640
+    width: 320  # 640 for frame_route (its thresholds are set at 640 x 480)
     max_rate: 10.0
     max_pair_gap: 0.2
     depth_slop: 0.04

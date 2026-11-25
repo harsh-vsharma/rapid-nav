@@ -18,7 +18,7 @@ def generate_launch_description():
         DeclareLaunchArgument('device', default_value='auto',
                               description="Device for RAFT and frame_route: 'auto', 'cpu' or "
                                           "'cuda'."),
-        DeclareLaunchArgument('width', default_value='640',
+        DeclareLaunchArgument('width', default_value='320',
                               description='Processing width in pixels (height follows aspect).'),
         DeclareLaunchArgument('max_rate', default_value='10.0',
                               description='Largest rate in wall-clock Hz (0: no limit).'),
