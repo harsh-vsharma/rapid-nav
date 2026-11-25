@@ -76,7 +76,7 @@ CLOSE_ENCOUNTER_M = 0.30
 LATCHED = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                      reliability=ReliabilityPolicy.RELIABLE)
 CONTROLLERS = ('dwa', 'dwb', 'rpp')
-HAZARDS = ('off', 'oracle', 'oracle_static', 'flow')
+HAZARDS = ('off', 'oracle', 'oracle_static', 'flow', 'fused')
 ROBOT_RADIUS_M = 0.25
 GOAL_XY_TOLERANCE_M = 0.25
 GOAL_YAW_TOLERANCE_RAD = 0.35

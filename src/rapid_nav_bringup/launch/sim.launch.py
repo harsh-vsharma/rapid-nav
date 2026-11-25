@@ -74,8 +74,16 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'hazards',
             default_value='off',
-            description="Hazard layer in the costmaps: 'off', 'oracle' (true obstacle velocities) "
-                        "or 'oracle_static' (positions only; the ablation).",
+            description="Hazard layer in the costmaps: 'off', 'oracle' (true obstacle "
+                        "velocities), 'oracle_static' (positions only; the ablation), 'flow' "
+                        "(camera tracks) or 'fused' (lidar and camera tracks in one filter, with "
+                        'uncertainty, and the speed governor).',
+        ),
+        DeclareLaunchArgument(
+            'governor',
+            default_value='true',
+            description="With hazards 'fused': start the time-to-collision speed governor "
+                        "('false': the ablation without it).",
         ),
         DeclareLaunchArgument(
             'perception',
@@ -146,11 +154,14 @@ def launch_setup(context):
             'navigation:=true already starts the planning stack; do not pass planning:=true too'
         )
     hazards = LaunchConfiguration('hazards').perform(context).strip().lower()
-    if hazards not in ('off', 'oracle', 'oracle_static', 'flow'):
+    if hazards not in ('off', 'oracle', 'oracle_static', 'flow', 'fused'):
         raise RuntimeError(
-            "hazards must be 'off', 'oracle', 'oracle_static' or 'flow', got '{}'".format(
+            "hazards must be 'off', 'oracle', 'oracle_static', 'flow' or 'fused', got '{}'".format(
                 hazards)
         )
+    governor = LaunchConfiguration('governor').perform(context).strip().lower()
+    if governor not in ('true', 'false'):
+        raise RuntimeError("governor must be 'true' or 'false', got '{}'".format(governor))
     if controller not in CONTROLLERS:
         raise RuntimeError(
             "controller must be 'dwa', 'dwb' or 'rpp', got '{}'".format(controller)
@@ -163,6 +174,7 @@ def launch_setup(context):
             launch_arguments=[
                 ('controller', controller),
                 ('hazards', hazards),
+                ('governor', governor),
                 ('use_sim_time', 'true'),
                 ('x', x),
                 ('y', y),
@@ -211,7 +223,8 @@ def launch_setup(context):
         ))
 
     perception = LaunchConfiguration('perception').perform(context).strip().lower() == 'true'
-    flow_hazards = hazards == 'flow'
+    flow_hazards = hazards in ('flow', 'fused')
+    fused = hazards == 'fused'
     if perception or flow_hazards:
         perception_launch = os.path.join(
             get_package_share_directory('rapid_nav_perception'), 'launch', 'perception.launch.py')
@@ -223,10 +236,22 @@ def launch_setup(context):
             ] + ([('num_threads', '4'), ('publish_vis', 'false')] if flow_hazards else []),
         ))
     if flow_hazards:
+        # With 'fused' the camera tracks carry their uncertainty and go to the fusion node.
+        tracker_parameters = {'use_sim_time': True}
+        if fused:
+            tracker_parameters.update({'topic': '/obstacles/flow', 'uncertainty': True})
         nodes.append(Node(
             package='rapid_nav_perception',
             executable='flow_tracker',
             name='flow_tracker',
+            output='screen',
+            parameters=[tracker_parameters],
+        ))
+    if fused:
+        nodes.append(Node(
+            package='rapid_nav_perception',
+            executable='fusion_node',
+            name='fusion_node',
             output='screen',
             parameters=[{'use_sim_time': True}],
         ))
