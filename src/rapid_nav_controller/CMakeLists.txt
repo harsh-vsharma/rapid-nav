@@ -37,10 +37,26 @@ add_library(rapid_nav_dwa_controller SHARED src/dwa_controller.cpp)
 target_include_directories(rapid_nav_dwa_controller PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_link_libraries(rapid_nav_dwa_controller rapid_nav_dwa_core)
-ament_target_dependencies(rapid_nav_dwa_controller
-  rclcpp rclcpp_lifecycle nav2_core nav2_costmap_2d nav2_util pluginlib nav_msgs
-  geometry_msgs visualization_msgs tf2 tf2_ros tf2_geometry_msgs)
+target_link_libraries(rapid_nav_dwa_controller PUBLIC
+  rapid_nav_dwa_core
+  rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
+  nav2_costmap_2d::nav2_costmap_2d_core
+  nav2_util::nav2_util_core
+  pluginlib::pluginlib
+  ${nav_msgs_TARGETS}
+  ${geometry_msgs_TARGETS}
+  ${visualization_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros
+  tf2_geometry_msgs::tf2_geometry_msgs)
+# Nav2's exported target for nav2_core; Jazzy's nav2_core is header-only and exports only its include
+# directories.
+if(TARGET nav2_core::nav2_core)
+  target_link_libraries(rapid_nav_dwa_controller PUBLIC nav2_core::nav2_core)
+else()
+  target_include_directories(rapid_nav_dwa_controller PUBLIC ${nav2_core_INCLUDE_DIRS})
+endif()
 
 install(TARGETS rapid_nav_dwa_core rapid_nav_dwa_controller
   EXPORT export_${PROJECT_NAME}

@@ -34,10 +34,17 @@ add_library(rapid_nav_hazard_layer SHARED src/hazard_layer.cpp)
 target_include_directories(rapid_nav_hazard_layer PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-target_link_libraries(rapid_nav_hazard_layer rapid_nav_hazard_core)
-ament_target_dependencies(rapid_nav_hazard_layer
-  rclcpp rclcpp_lifecycle nav2_costmap_2d pluginlib geometry_msgs tf2 tf2_ros tf2_geometry_msgs
-  rapid_nav_msgs)
+target_link_libraries(rapid_nav_hazard_layer PUBLIC
+  rapid_nav_hazard_core
+  rclcpp::rclcpp
+  rclcpp_lifecycle::rclcpp_lifecycle
+  nav2_costmap_2d::nav2_costmap_2d_core
+  pluginlib::pluginlib
+  ${geometry_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros
+  tf2_geometry_msgs::tf2_geometry_msgs
+  ${rapid_nav_msgs_TARGETS})
 
 install(TARGETS rapid_nav_hazard_core rapid_nav_hazard_layer
   EXPORT export_${PROJECT_NAME}

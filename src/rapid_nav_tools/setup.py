@@ -19,7 +19,7 @@ setup(
     maintainer_email='harsh.v.sharma@outlook.com',
     description='Checks of the RAPID-NAV simulation and planners, and the path viewer.',
     license='MIT',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'sim_check = rapid_nav_tools.sim_check:main',

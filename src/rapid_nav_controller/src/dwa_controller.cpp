@@ -12,7 +12,6 @@
 
 #include "nav2_core/controller_exceptions.hpp"
 #include "nav2_costmap_2d/costmap_2d.hpp"
-#include "nav2_util/node_utils.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "nav2_util/robot_utils.hpp"
 #include "pluginlib/class_list_macros.hpp"
@@ -49,7 +48,7 @@ DwaController::DwaController()
 }
 
 void DwaController::configure(
-  const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent, std::string name,
+  const compat::LifecycleNode::WeakPtr & parent, std::string name,
   std::shared_ptr<tf2_ros::Buffer> tf, std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
   const auto node = parent.lock();
@@ -91,7 +90,35 @@ void DwaController::deactivate()
   RCLCPP_INFO(logger_, "DwaController '%s' deactivated", name_.c_str());
 }
 
+#if RAPID_NAV_NAV2_ROS_COMMON
+void DwaController::newPathReceived(const nav_msgs::msg::Path & raw_global_path)
+{
+  set_plan(raw_global_path);
+}
+
+geometry_msgs::msg::TwistStamped DwaController::computeVelocityCommands(
+  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+  nav2_core::GoalChecker * /*goal_checker*/,
+  const nav_msgs::msg::Path & /*transformed_global_plan*/,
+  const geometry_msgs::msg::PoseStamped & /*global_goal*/)
+{
+  return compute_velocity(pose, velocity);
+}
+#else
 void DwaController::setPlan(const nav_msgs::msg::Path & path)
+{
+  set_plan(path);
+}
+
+geometry_msgs::msg::TwistStamped DwaController::computeVelocityCommands(
+  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
+  nav2_core::GoalChecker * /*goal_checker*/)
+{
+  return compute_velocity(pose, velocity);
+}
+#endif
+
+void DwaController::set_plan(const nav_msgs::msg::Path & path)
 {
   if (path.poses.empty()) {
     throw nav2_core::InvalidPath("DwaController: the global plan is empty");
@@ -109,9 +136,8 @@ void DwaController::setSpeedLimit(const double & speed_limit, const bool & perce
   speed_limit_ = percentage ? params_.max_vel_x * speed_limit / 100.0 : speed_limit;
 }
 
-geometry_msgs::msg::TwistStamped DwaController::computeVelocityCommands(
-  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity,
-  nav2_core::GoalChecker * /*goal_checker*/)
+geometry_msgs::msg::TwistStamped DwaController::compute_velocity(
+  const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity)
 {
   if (global_plan_.poses.empty()) {
     throw nav2_core::InvalidPath("DwaController: no global plan has been set");
@@ -160,9 +186,9 @@ geometry_msgs::msg::TwistStamped DwaController::computeVelocityCommands(
   return command;
 }
 
-void DwaController::load_parameters(const rclcpp_lifecycle::LifecycleNode::SharedPtr & node)
+void DwaController::load_parameters(const compat::LifecycleNode::SharedPtr & node)
 {
-  nav2_util::declare_parameter_if_not_declared(
+  compat::declare_parameter_if_not_declared(
     node, "controller_frequency", rclcpp::ParameterValue(20.0));
   const double frequency = node->get_parameter("controller_frequency").as_double();
 
@@ -194,29 +220,29 @@ void DwaController::load_parameters(const rclcpp_lifecycle::LifecycleNode::Share
 }
 
 double DwaController::read_double(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+  const compat::LifecycleNode::SharedPtr & node, const std::string & key,
   double value) const
 {
   const std::string full = name_ + "." + key;
-  nav2_util::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
+  compat::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
   return node->get_parameter(full).as_double();
 }
 
 int DwaController::read_int(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+  const compat::LifecycleNode::SharedPtr & node, const std::string & key,
   int value) const
 {
   const std::string full = name_ + "." + key;
-  nav2_util::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
+  compat::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
   return static_cast<int>(node->get_parameter(full).as_int());
 }
 
 bool DwaController::read_bool(
-  const rclcpp_lifecycle::LifecycleNode::SharedPtr & node, const std::string & key,
+  const compat::LifecycleNode::SharedPtr & node, const std::string & key,
   bool value) const
 {
   const std::string full = name_ + "." + key;
-  nav2_util::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
+  compat::declare_parameter_if_not_declared(node, full, rclcpp::ParameterValue(value));
   return node->get_parameter(full).as_bool();
 }
 

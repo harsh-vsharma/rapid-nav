@@ -214,25 +214,27 @@ while turning in place against the gyro's prediction.
 
 The repository never requires PyTorch to build or test. It is needed only to run the RAFT backends. It goes into a
 virtual environment that still sees the ROS packages and the system numpy, so that nothing ROS-related changes. The
-numpy must stay 1.x, because the ROS binaries are built against it.
+numpy must stay the system's (1.x on Jazzy, 2.x on Lyrical), because the ROS binaries are built against it.
 
 Source the ROS environment first, then create and activate the environment, then install PyTorch. The
 environment must be active when the workspace is built, so that the flow node's script runs with the environment's
 Python.
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/<distro>/setup.bash   # jazzy or lyrical
 python3 -m venv --system-site-packages ~/venvs/rapid-nav
 source ~/venvs/rapid-nav/bin/activate
 # CPU only:
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 # with an NVIDIA GPU instead:
 # pip install torch torchvision
+# with an RTX 50-series (Blackwell) GPU, a build for CUDA 12.8 or newer is needed:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 python3 -c "import torch, torchvision, numpy; print(torch.__version__, torchvision.__version__, numpy.__version__)"
 ```
 
-The numpy version printed must start with `1.`. If pip replaced numpy, run `pip install "numpy<2"` and run the
-check again.
+On Jazzy, the numpy version printed must start with `1.`. If pip replaced numpy, run `pip install "numpy<2"` and run
+the check again. On Lyrical it is the system's numpy 2.
 
 Then build the workspace from the same shell, with the environment still active:
 

@@ -21,7 +21,7 @@ setup(
     maintainer_email='harsh.v.sharma@outlook.com',
     description='Optical flow for the RAPID-NAV robot: backends, back-projection, flow node.',
     license='MIT',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'flow_node = rapid_nav_perception.flow_node:main',

@@ -17,6 +17,7 @@
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>nav2_msgs</exec_depend>
   <exec_depend>action_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
   <exec_depend>ros_gz_sim</exec_depend>
   <!-- nav_run reads the scenarios and the map of rapid_nav_navigation at run time. That package
        depends on this one, so it is not listed here. -->
