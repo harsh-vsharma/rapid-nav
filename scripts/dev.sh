@@ -23,6 +23,8 @@ usage() {
     cat <<EOF
 usage: [ROS_DISTRO=jazzy|lyrical] scripts/dev.sh <command>
 
+  (INSTALL_TORCH=0 scripts/dev.sh image builds the image without PyTorch; the flow node then uses Farneback)
+
   image           build the image $IMAGE from docker/Dockerfile
   build [args]    colcon build of src/ (inside the image, into the volume $VOLUME)
   test            colcon test of src/, then the test results
@@ -97,7 +99,7 @@ extract_rtf() {
 
 case "${1:-}" in
     image)
-        docker build --build-arg ROS_DISTRO="$ROS_DISTRO" -t "$IMAGE" -f "$REPO/docker/Dockerfile" "$REPO/docker"
+        docker build --build-arg ROS_DISTRO="$ROS_DISTRO" --build-arg INSTALL_TORCH="${INSTALL_TORCH:-1}" -t "$IMAGE" -f "$REPO/docker/Dockerfile" "$REPO/docker"
         ;;
     build)
         shift

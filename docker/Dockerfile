@@ -61,12 +61,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # PyTorch for the RAFT flow backends, in a virtual environment that still sees the system (ROS) packages.
 # CPU wheels only. pip must not replace the numpy the ROS binaries are built against.
-RUN python3 -m venv --system-site-packages /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# INSTALL_TORCH=0 leaves it out; the flow node then falls back to Farneback.
+ARG INSTALL_TORCH=1
+RUN if [ "$INSTALL_TORCH" = 1 ]; then \
+        python3 -m venv --system-site-packages /opt/venv \
+        && /opt/venv/bin/pip install --no-cache-dir torch torchvision \
+            --index-url https://download.pytorch.org/whl/cpu; \
+    fi
 ENV PATH=/opt/venv/bin:$PATH
 
 # Fetch the RAFT weights now, so that runs need no network.
-RUN python3 -c "from torchvision.models.optical_flow import raft_small, raft_large, Raft_Small_Weights, Raft_Large_Weights; raft_small(weights=Raft_Small_Weights.DEFAULT); raft_large(weights=Raft_Large_Weights.DEFAULT)"
+RUN if [ "$INSTALL_TORCH" = 1 ]; then \
+        python3 -c "from torchvision.models.optical_flow import raft_small, raft_large, Raft_Small_Weights, Raft_Large_Weights; raft_small(weights=Raft_Small_Weights.DEFAULT); raft_large(weights=Raft_Large_Weights.DEFAULT)"; \
+    fi
 
 RUN rosdep update --rosdistro ${ROS_DISTRO}
 
