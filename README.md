@@ -7,7 +7,8 @@
 A differential-drive mobile robot in Gazebo that sees moving obstacles with its RGB-D camera. Optical flow (RAFT, or
 FlowNetS / SEA-RAFT routed per frame) gives image motion; depth and the robot's pose remove the robot's own motion;
 the remaining motion becomes tracked obstacles with velocities, which a velocity-aware Nav2 costmap layer turns into
-predicted hazards for the planners and controllers.
+predicted hazards for the planners and controllers. The hybrid mode fuses these camera tracks with the lidar in a
+Kalman filter, turns the prediction's uncertainty into costmap risk and limits the speed by time to collision.
 
 A project for AR522 Robot Vision and AR511 Autonomous Mobile Robots at CAIR, IIT Mandi.
 
@@ -27,6 +28,7 @@ Parts marked done are on `main` and covered by CI; the simulation runs on a CPU 
 | Hazard layer: velocity-aware costmap from tracked obstacles (oracle or camera) | done |
 | Experiments: repeated matrices, resumable runner, bootstrap statistics | done |
 | Hybrid: lidar–camera Kalman fusion, risk cost, time-to-collision speed governor ([docs/hybrid.md](docs/hybrid.md)) | done |
+| ROS 2 Jazzy and Lyrical from one codebase, CI on both | done |
 
 ## Pipeline
 
@@ -55,7 +57,7 @@ vision side, [docs/navigation.md](docs/navigation.md) for planning and control, 
   the maps and the navigation launch, our planner (`rapid_nav_planner`) and the planner checks (`planner_check`), our
   controller (`rapid_nav_controller`), and the tools (`rapid_nav_tools`): the checks, the path viewer and `nav_run`.
 - `prototypes/`: reference code, not built.
-- `docs/`: setup, development and architecture notes.
+- `docs/`: setup, development and architecture notes, and the team's simulation guide.
 - `docker/`: optional build-and-test image for machines without a native ROS 2 install.
 - `scripts/`: `dev.sh`, which drives the Docker image.
 
@@ -67,6 +69,8 @@ vision side, [docs/navigation.md](docs/navigation.md) for planning and control, 
 The full steps are in [docs/setup.md](docs/setup.md).
 
 ## Quick start
+
+A one-page command reference for the team is in [docs/sim-guide.md](docs/sim-guide.md).
 
 ```bash
 mkdir -p ~/ros_ws && cd ~/ros_ws
