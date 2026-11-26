@@ -1,7 +1,7 @@
 """
-Geometry for the RViz view: the lidar as a polyline, the flow as moving instances with a mesh.
+Geometry for the RViz view: the lidar as a polyline, the flow as bodies with convex hulls.
 
-Pure numpy (and scipy's connected components), no ROS imports.
+Pure numpy and scipy (connected components, convex hulls), no ROS imports.
 
 Lidar: consecutive beams whose end points are closer than a gap are joined by a segment.
 
@@ -247,31 +247,6 @@ def confirm_movers(current, previous, dt, position_tol=0.4, velocity_tol=0.3,
     return out
 
 
-def grid_triangles(grid, labels, keep, stride=1):
-    """
-    Return the mesh triangles (T, 3) of sample indices: two per square of the coarse grid.
-
-    The mesh uses every stride-th row and column of the sample grid. A coarse square is meshed
-    only when all the (stride + 1)^2 fine samples it covers exist and belong to one instance whose
-    label is in `keep` (a boolean array over the labels). Samples removed at depth edges therefore
-    leave a gap, and no triangle bridges an object and the background behind it.
-    """
-    rows, cols = grid.shape
-    s = max(1, int(stride))
-    rc, cc = (rows - 1) // s, (cols - 1) // s
-    if rc <= 0 or cc <= 0 or labels.size == 0:
-        return np.zeros((0, 3), dtype=int)
-    lab = np.where(grid >= 0, labels[np.maximum(grid, 0)], -1)
-    base = lab[0:rc * s:s, 0:cc * s:s]
-    ok = (base >= 0) & keep[np.maximum(base, 0)]
-    for di in range(s + 1):
-        for dj in range(s + 1):
-            ok &= lab[di:di + rc * s:s, dj:dj + cc * s:s] == base
-    a, b = grid[0:rc * s:s, 0:cc * s:s][ok], grid[0:rc * s:s, s:cc * s + 1:s][ok]
-    c, d = grid[s:rc * s + 1:s, 0:cc * s:s][ok], grid[s:rc * s + 1:s, s:cc * s + 1:s][ok]
-    return np.concatenate([np.stack([a, c, b], axis=1), np.stack([b, c, d], axis=1)])
-
-
 def depth_jumps(z0, z1, jump=0.10, relative=0.05):
     """
     Return a mask of the samples whose depth jumps between the two frames (an occlusion).
@@ -282,21 +257,6 @@ def depth_jumps(z0, z1, jump=0.10, relative=0.05):
     """
     z0, z1 = np.asarray(z0, dtype=np.float64), np.asarray(z1, dtype=np.float64)
     return np.abs(z1 - z0) > jump + relative * np.minimum(z0, z1)
-
-
-def heading_colour(vx, vy, speed_full=1.0):
-    """
-    Return (r, g, b) in 0..1 for a planar velocity: hue is the heading, saturation the speed.
-
-    The same colour wheel as the flow picture (flowvis): +x red, +y yellow-green, -x cyan. The
-    saturation reaches 1 at speed_full m/s; a slow instance is pale.
-    """
-    hue = (math.atan2(vy, vx) / (2.0 * math.pi)) % 1.0
-    sat = min(1.0, 0.35 + 0.65 * math.hypot(vx, vy) / max(speed_full, 1e-6))
-    sector = int(hue * 6.0) % 6
-    f = hue * 6.0 - math.floor(hue * 6.0)
-    p, q, t = 1.0 - sat, 1.0 - sat * f, 1.0 - sat * (1.0 - f)
-    return ((1.0, t, p), (q, 1.0, p), (p, 1.0, t), (p, q, 1.0), (t, p, 1.0), (1.0, p, q))[sector]
 
 
 # Solid body colours (r, g, b): distinct, muted, readable on a dark background.

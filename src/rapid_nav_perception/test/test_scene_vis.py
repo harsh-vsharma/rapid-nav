@@ -1,12 +1,11 @@
-"""Tests of the RViz geometry: lidar outline, instances by velocity gradient, mesh."""
+"""Tests of the RViz geometry: lidar outline, bodies by velocity gradient, convex hulls."""
 
 import math
 
 import numpy as np
 from rapid_nav_perception.scene_vis import (
-    body_hull, confirm_movers, depth_edges, depth_jumps, grid_triangles, heading_colour,
-    index_grid, instance_motion, merge_instances, scan_segments, segment_instances, stable_ids,
-    tile_indices)
+    body_hull, confirm_movers, depth_edges, depth_jumps, index_grid, instance_motion,
+    merge_instances, scan_segments, segment_instances, stable_ids, tile_indices)
 
 
 def test_scan_segments_join_close_beams_only():
@@ -50,28 +49,11 @@ def test_instances_split_by_velocity_and_carry_mean_and_rotation():
     assert np.allclose(insts[labels[~right][0]]['velocity'], 0.0)
 
 
-def test_mesh_two_triangles_per_square_within_instance():
-    rc, pts, vel, right, _ = make_scene()
-    grid = index_grid(rc, (10, 10))
-    labels = segment_instances(grid, pts, vel, 0.25, 0.25)
-    keep = np.ones(labels.max() + 1, dtype=bool)
-    tris = grid_triangles(grid, labels, keep)
-    # Each half is 10 x 5 samples: 9 x 4 squares, 2 triangles each; none across the split.
-    assert tris.shape == (2 * 2 * 9 * 4, 3)
-    assert np.all(labels[tris[:, 0]] == labels[tris[:, 1]])
-    keep[labels[~right][0]] = False
-    assert grid_triangles(grid, labels, keep).shape[0] == 2 * 9 * 4
-
-
 def test_tile_indices_inverse_of_block_centres():
     block = 4
     rows, cols = np.array([0, 3]), np.array([2, 5])
     pix = np.stack([(cols + 0.5) * block - 0.5, (rows + 0.5) * block - 0.5], axis=1)
     assert np.array_equal(tile_indices(pix, block), np.stack([rows, cols], axis=1))
-
-
-def test_heading_colour_red_for_plus_x():
-    assert np.allclose(heading_colour(2.0, 0.0), (1.0, 0.0, 0.0))
 
 
 def test_confirm_movers_needs_a_consistent_previous_mover():
@@ -103,19 +85,6 @@ def test_merge_instances_joins_close_alike_pieces_only():
     assert groups == [[0, 1, 2], [3], [4]]
     big = [m for m in merged if len(m['labels']) == 3][0]
     assert big['n'] == 30 and math.isclose(big['centroid'][0], 0.4)
-
-
-def test_mesh_stride_and_gaps_never_bridge():
-    rc = np.array([[r, c] for r in range(5) for c in range(5)])
-    labels = np.zeros(25, dtype=int)
-    keep = np.ones(1, dtype=bool)
-    grid = index_grid(rc, (5, 5))
-    assert grid_triangles(grid, labels, keep, 2).shape == (2 * 2 * 2, 3)  # 2 x 2 coarse squares
-    holed = grid.copy()
-    holed[1, 1] = -1  # a sample removed at a depth edge
-    tris = grid_triangles(holed, labels, keep, 2)
-    assert tris.shape == (2 * 3, 3)  # the coarse square over the hole is not meshed
-    assert not np.any(np.isin(tris, [grid[0, 0], grid[0, 2], grid[2, 0], grid[2, 2]]).all(axis=1))
 
 
 def test_depth_jumps_flags_occlusions_only():

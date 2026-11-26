@@ -32,14 +32,15 @@ def test_yaw_quaternion_half_turn():
     assert z == pytest.approx(1.0) and w == pytest.approx(0.0, abs=1e-12)
 
 
-def test_node_constructs():
-    """The node builds (its attribute names must not clash with rclpy's Node)."""
-    import rclpy
+def test_node_attributes_do_not_clash_with_rclpy():
+    """No attribute DemoMission assigns may shadow one of rclpy's Node (e.g. Node.handle)."""
+    import inspect
+    import re
+
     from rapid_nav_tools.demo_mission import DemoMission
-    rclpy.init()
-    try:
-        node = DemoMission()
-        assert len(node.checkpoints) == 6
-        node.destroy_node()
-    finally:
-        rclpy.shutdown()
+    from rclpy.node import Node
+    targets = re.findall(r'^\s*((?:self\.\w+\s*,\s*)*self\.\w+)\s*=[^=]',
+                         inspect.getsource(DemoMission), re.MULTILINE)
+    names = {n for t in targets for n in re.findall(r'self\.(\w+)', t)}
+    assert {'checkpoints', 'goal_handle', 'mission'} <= names
+    assert sorted(n for n in names if hasattr(Node, n)) == []

@@ -91,6 +91,8 @@ of their heading) and one arrow per moving object.
 ros2 launch rapid_nav_bringup sim.launch.py
 ```
 
+How it all fits together, from the sensors to RViz: [docs/how-it-works.md](docs/how-it-works.md).
+
 The sections below are the experiment set-ups the scripts use; giving `stack:=` switches from the demo to them. The
 robot alone (for teleop and the automatic check):
 
